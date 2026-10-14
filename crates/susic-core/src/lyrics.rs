@@ -56,17 +56,29 @@ impl Lyrics {
             } else {
                 any_timed = true;
                 for t in stamps {
-                    lines.push(LyricLine { time_ms: Some(t - offset), text: rest.to_string() });
+                    lines.push(LyricLine {
+                        time_ms: Some(t - offset),
+                        text: rest.to_string(),
+                    });
                 }
             }
         }
         if any_timed {
             lines.sort_by_key(|l| l.time_ms);
-            Lyrics { synced: true, lines }
+            Lyrics {
+                synced: true,
+                lines,
+            }
         } else {
             Lyrics {
                 synced: false,
-                lines: plain.into_iter().map(|text| LyricLine { time_ms: None, text }).collect(),
+                lines: plain
+                    .into_iter()
+                    .map(|text| LyricLine {
+                        time_ms: None,
+                        text,
+                    })
+                    .collect(),
             }
         }
     }

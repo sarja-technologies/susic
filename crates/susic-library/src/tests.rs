@@ -16,8 +16,16 @@ fn nt(title: &str, artist: &str, album: &str, path: &str, hash: &str) -> NewTrac
 
 fn lib() -> Library {
     let l = Library::open_memory().unwrap();
-    for (i, (t, a, al)) in [("Alpha", "Ann", "One"), ("Beta", "Ann", "One"), ("Gamma", "Bob", "Two")].iter().enumerate() {
-        l.upsert_track(&nt(t, a, al, &format!("/m/{t}.mp3"), &format!("h{i}"))).unwrap();
+    for (i, (t, a, al)) in [
+        ("Alpha", "Ann", "One"),
+        ("Beta", "Ann", "One"),
+        ("Gamma", "Bob", "Two"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        l.upsert_track(&nt(t, a, al, &format!("/m/{t}.mp3"), &format!("h{i}")))
+            .unwrap();
     }
     l
 }
@@ -68,19 +76,43 @@ fn migrations_v1() -> &'static str {
 #[test]
 fn dedupes_by_path_and_hash() {
     let l = lib();
-    assert!(matches!(l.upsert_track(&nt("Alpha", "Ann", "One", "/m/Alpha.mp3", "h0")).unwrap(), Upsert::Updated(_)));
-    assert!(matches!(l.upsert_track(&nt("Alpha", "Ann", "One", "/copy/Alpha.mp3", "h0")).unwrap(), Upsert::Duplicate(_)));
+    assert!(matches!(
+        l.upsert_track(&nt("Alpha", "Ann", "One", "/m/Alpha.mp3", "h0"))
+            .unwrap(),
+        Upsert::Updated(_)
+    ));
+    assert!(matches!(
+        l.upsert_track(&nt("Alpha", "Ann", "One", "/copy/Alpha.mp3", "h0"))
+            .unwrap(),
+        Upsert::Duplicate(_)
+    ));
     assert_eq!(l.stats().unwrap().tracks, 3);
 }
 
 #[test]
 fn search_and_sort() {
     let l = lib();
-    let r = l.list_tracks(&TrackQuery { search: Some("ann one".into()), ..Default::default() }).unwrap();
+    let r = l
+        .list_tracks(&TrackQuery {
+            search: Some("ann one".into()),
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(r.len(), 2);
-    let r = l.list_tracks(&TrackQuery { sort: Some("title".into()), desc: Some(true), ..Default::default() }).unwrap();
+    let r = l
+        .list_tracks(&TrackQuery {
+            sort: Some("title".into()),
+            desc: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(r[0].title, "Gamma");
-    let r = l.list_tracks(&TrackQuery { search: Some("100%".into()), ..Default::default() }).unwrap();
+    let r = l
+        .list_tracks(&TrackQuery {
+            search: Some("100%".into()),
+            ..Default::default()
+        })
+        .unwrap();
     assert!(r.is_empty());
 }
 
@@ -106,14 +138,29 @@ fn favourites_and_history() {
     assert_eq!(t.play_count, 2);
     assert_eq!(l.recently_played(10).unwrap().len(), 1);
     assert_eq!(l.most_played(10).unwrap()[0].id, id);
-    assert_eq!(l.list_tracks(&TrackQuery { favourites_only: Some(true), ..Default::default() }).unwrap().len(), 1);
+    assert_eq!(
+        l.list_tracks(&TrackQuery {
+            favourites_only: Some(true),
+            ..Default::default()
+        })
+        .unwrap()
+        .len(),
+        1
+    );
 }
 
 #[test]
 fn edits_are_separate_from_original() {
     let l = lib();
     let id = l.list_tracks(&TrackQuery::default()).unwrap()[0].id;
-    l.edit_track(id, &TrackEdit { title: Some("Edited".into()), ..Default::default() }).unwrap();
+    l.edit_track(
+        id,
+        &TrackEdit {
+            title: Some("Edited".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(l.get_track(id).unwrap().unwrap().title, "Edited");
     l.clear_edit(id).unwrap();
     assert_eq!(l.get_track(id).unwrap().unwrap().title, "Alpha");
@@ -122,7 +169,12 @@ fn edits_are_separate_from_original() {
 #[test]
 fn playlists_roundtrip() {
     let l = lib();
-    let ids: Vec<i64> = l.list_tracks(&TrackQuery::default()).unwrap().iter().map(|t| t.id).collect();
+    let ids: Vec<i64> = l
+        .list_tracks(&TrackQuery::default())
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
     let p = l.create_playlist("Mix").unwrap();
     l.add_to_playlist(p, &ids).unwrap();
     l.add_to_playlist(p, &[ids[0]]).unwrap(); // duplicates allowed

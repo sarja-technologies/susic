@@ -46,7 +46,9 @@ impl From<snow::Error> for Error {
 
 pub fn generate_code() -> String {
     let mut rng = rand::thread_rng();
-    (0..12).map(|_| CODE_ALPHABET[rng.gen_range(0..CODE_ALPHABET.len())] as char).collect()
+    (0..12)
+        .map(|_| CODE_ALPHABET[rng.gen_range(0..CODE_ALPHABET.len())] as char)
+        .collect()
 }
 
 pub fn normalize_code(code: &str) -> String {
@@ -62,11 +64,18 @@ pub fn normalize_code(code: &str) -> String {
 }
 
 pub fn format_code(code: &str) -> String {
-    code.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap()).collect::<Vec<_>>().join("-")
+    code.as_bytes()
+        .chunks(4)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 fn psk(code: &str) -> [u8; 32] {
-    *blake3::derive_key("susic 0.1 pairing psk", normalize_code(code).as_bytes()).as_slice().first_chunk::<32>().unwrap()
+    *blake3::derive_key("susic 0.1 pairing psk", normalize_code(code).as_bytes())
+        .as_slice()
+        .first_chunk::<32>()
+        .unwrap()
 }
 
 /// `susic://pair?host=…&port=…&code=…` for QR encoding.
@@ -111,23 +120,35 @@ fn read_frame(s: &mut TcpStream) -> Result<Vec<u8>> {
 
 impl Secure {
     fn handshake_initiator(mut stream: TcpStream, code: &str) -> Result<Self> {
-        let mut hs = snow::Builder::new(PATTERN.parse()?).psk(0, &psk(code)).build_initiator()?;
+        let mut hs = snow::Builder::new(PATTERN.parse()?)
+            .psk(0, &psk(code))
+            .build_initiator()?;
         let mut buf = vec![0u8; MAX_FRAME];
         let n = hs.write_message(&[], &mut buf)?;
         write_frame(&mut stream, &buf[..n])?;
         let reply = read_frame(&mut stream).map_err(|_| Error::PairingFailed)?;
-        hs.read_message(&reply, &mut buf).map_err(|_| Error::PairingFailed)?;
-        Ok(Self { stream, noise: hs.into_transport_mode()? })
+        hs.read_message(&reply, &mut buf)
+            .map_err(|_| Error::PairingFailed)?;
+        Ok(Self {
+            stream,
+            noise: hs.into_transport_mode()?,
+        })
     }
 
     fn handshake_responder(mut stream: TcpStream, code: &str) -> Result<Self> {
-        let mut hs = snow::Builder::new(PATTERN.parse()?).psk(0, &psk(code)).build_responder()?;
+        let mut hs = snow::Builder::new(PATTERN.parse()?)
+            .psk(0, &psk(code))
+            .build_responder()?;
         let mut buf = vec![0u8; MAX_FRAME];
         let first = read_frame(&mut stream)?;
-        hs.read_message(&first, &mut buf).map_err(|_| Error::PairingFailed)?;
+        hs.read_message(&first, &mut buf)
+            .map_err(|_| Error::PairingFailed)?;
         let n = hs.write_message(&[], &mut buf)?;
         write_frame(&mut stream, &buf[..n])?;
-        Ok(Self { stream, noise: hs.into_transport_mode()? })
+        Ok(Self {
+            stream,
+            noise: hs.into_transport_mode()?,
+        })
     }
 
     /// Send one logical message (any length).
@@ -265,7 +286,8 @@ pub fn serve(
 
     // Expiry watchdog.
     {
-        let (stop, la, ev, code_port) = (stop.clone(), last_activity.clone(), on_event.clone(), port);
+        let (stop, la, ev, code_port) =
+            (stop.clone(), last_activity.clone(), on_event.clone(), port);
         std::thread::spawn(move || {
             while !stop.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(500));
@@ -317,7 +339,8 @@ pub fn serve(
 
 fn session(sec: &mut Secure, p: &dyn Provider, on_sent: &dyn Fn(i64)) -> Result<()> {
     // Keep-alive while idle, up to the watchdog's TTL.
-    sec.stream.set_read_timeout(Some(Duration::from_secs(600)))?;
+    sec.stream
+        .set_read_timeout(Some(Duration::from_secs(600)))?;
     loop {
         let raw = sec.recv()?;
         let req: Request = serde_json::from_slice(&raw).map_err(|e| Error::Proto(e.to_string()))?;
@@ -328,7 +351,11 @@ fn session(sec: &mut Secure, p: &dyn Provider, on_sent: &dyn Fn(i64)) -> Result<
                     use std::io::Seek;
                     let offset = offset.min(size);
                     f.seek(std::io::SeekFrom::Start(offset))?;
-                    let hdr = FileHeader { ok: true, size: size - offset, error: None };
+                    let hdr = FileHeader {
+                        ok: true,
+                        size: size - offset,
+                        error: None,
+                    };
                     sec.send(&serde_json::to_vec(&hdr).unwrap())?;
                     let mut buf = vec![0u8; 256 * 1024];
                     loop {
@@ -341,7 +368,11 @@ fn session(sec: &mut Secure, p: &dyn Provider, on_sent: &dyn Fn(i64)) -> Result<
                     on_sent(id);
                 }
                 Err(e) => {
-                    let hdr = FileHeader { ok: false, size: 0, error: Some(e.to_string()) };
+                    let hdr = FileHeader {
+                        ok: false,
+                        size: 0,
+                        error: Some(e.to_string()),
+                    };
                     sec.send(&serde_json::to_vec(&hdr).unwrap())?;
                 }
             },
@@ -367,7 +398,9 @@ impl Client {
         let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(8))?;
         stream.set_read_timeout(Some(Duration::from_secs(30)))?;
         stream.set_nodelay(true).ok();
-        Ok(Self { sec: Secure::handshake_initiator(stream, code)? })
+        Ok(Self {
+            sec: Secure::handshake_initiator(stream, code)?,
+        })
     }
 
     fn call(&mut self, r: &Request) -> Result<()> {
@@ -388,7 +421,11 @@ impl Client {
     pub fn lyrics(&mut self, id: i64) -> Result<Option<String>> {
         self.call(&Request::Lyrics { id })?;
         let b = self.sec.recv()?;
-        Ok(if b.is_empty() { None } else { String::from_utf8(b).ok() })
+        Ok(if b.is_empty() {
+            None
+        } else {
+            String::from_utf8(b).ok()
+        })
     }
 
     /// Download a track into `out`, resuming from `offset`. Calls `progress(bytes_done, total)`.
@@ -404,7 +441,9 @@ impl Client {
         let hdr: FileHeader =
             serde_json::from_slice(&self.sec.recv()?).map_err(|e| Error::Proto(e.to_string()))?;
         if !hdr.ok {
-            return Err(Error::Proto(hdr.error.unwrap_or_else(|| "transfer refused".into())));
+            return Err(Error::Proto(
+                hdr.error.unwrap_or_else(|| "transfer refused".into()),
+            ));
         }
         let mut got = 0u64;
         while got < hdr.size {
@@ -481,7 +520,12 @@ mod tests {
         let data: Vec<u8> = (0..700_000u32).map(|i| (i % 251) as u8).collect();
         let f = dir.join("a.bin");
         std::fs::write(&f, &data).unwrap();
-        let srv = serve(Arc::new(P(f, data.clone())), Duration::from_secs(60), |_| {}).unwrap();
+        let srv = serve(
+            Arc::new(P(f, data.clone())),
+            Duration::from_secs(60),
+            |_| {},
+        )
+        .unwrap();
 
         // Wrong code is rejected.
         assert!(Client::connect("127.0.0.1", srv.port, "WRONGWRONG12").is_err());
@@ -499,7 +543,9 @@ mod tests {
         let mut tail = Cursor::new(Vec::new());
         c.fetch(1, 600_000, &mut tail, |_, _| {}, &cancel).unwrap();
         assert_eq!(tail.into_inner(), data[600_000..]);
-        assert!(c.fetch(9, 0, &mut Cursor::new(Vec::new()), |_, _| {}, &cancel).is_err());
+        assert!(c
+            .fetch(9, 0, &mut Cursor::new(Vec::new()), |_, _| {}, &cancel)
+            .is_err());
         c.close();
         srv.stop();
         std::fs::remove_dir_all(dir).ok();
@@ -511,6 +557,9 @@ mod tests {
         assert_eq!(c.len(), 12);
         assert_eq!(normalize_code("abcd-0ilo"), "ABCD01L0".replace('L', "1"));
         let uri = pairing_uri("192.168.1.2", 4000, &c);
-        assert_eq!(parse_pairing_uri(&uri), Some(("192.168.1.2".into(), 4000, c)));
+        assert_eq!(
+            parse_pairing_uri(&uri),
+            Some(("192.168.1.2".into(), 4000, c))
+        );
     }
 }

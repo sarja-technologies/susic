@@ -119,7 +119,9 @@ impl Library {
     }
 
     pub fn schema_version(&self) -> Result<i64> {
-        Ok(self.conn.pragma_query_value(None, "user_version", |r| r.get(0))?)
+        Ok(self
+            .conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))?)
     }
 
     // ---- tracks -----------------------------------------------------------
@@ -129,7 +131,9 @@ impl Library {
     pub fn upsert_track(&self, t: &NewTrack) -> Result<Upsert> {
         if let Some(id) = self
             .conn
-            .query_row("SELECT id FROM tracks WHERE path=?1", [&t.path], |r| r.get::<_, i64>(0))
+            .query_row("SELECT id FROM tracks WHERE path=?1", [&t.path], |r| {
+                r.get::<_, i64>(0)
+            })
             .optional()?
         {
             self.conn.execute(
@@ -144,7 +148,9 @@ impl Library {
         if !t.hash.is_empty() {
             if let Some(id) = self
                 .conn
-                .query_row("SELECT id FROM tracks WHERE hash=?1", [&t.hash], |r| r.get::<_, i64>(0))
+                .query_row("SELECT id FROM tracks WHERE hash=?1", [&t.hash], |r| {
+                    r.get::<_, i64>(0)
+                })
                 .optional()?
             {
                 return Ok(Upsert::Duplicate(id));
@@ -188,7 +194,12 @@ impl Library {
                      OR COALESCE(e.album,t.album) LIKE ? ESCAPE '\\')"
                         .into(),
                 );
-                let pat = format!("%{}%", word.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+                let pat = format!(
+                    "%{}%",
+                    word.replace('\\', "\\\\")
+                        .replace('%', "\\%")
+                        .replace('_', "\\_")
+                );
                 args.extend([pat.clone(), pat.clone(), pat]);
             }
         }
@@ -200,7 +211,10 @@ impl Library {
             args.push(a.clone());
         }
         if let Some(a) = &q.artist {
-            where_.push("(COALESCE(e.artist,t.artist)=? OR COALESCE(e.album_artist,t.album_artist)=?)".into());
+            where_.push(
+                "(COALESCE(e.artist,t.artist)=? OR COALESCE(e.album_artist,t.album_artist)=?)"
+                    .into(),
+            );
             args.push(a.clone());
             args.push(a.clone());
         }
@@ -228,7 +242,12 @@ impl Library {
     }
 
     pub fn recently_added(&self, limit: i64) -> Result<Vec<Track>> {
-        self.list_tracks(&TrackQuery { sort: Some("added".into()), desc: Some(true), limit: Some(limit), ..Default::default() })
+        self.list_tracks(&TrackQuery {
+            sort: Some("added".into()),
+            desc: Some(true),
+            limit: Some(limit),
+            ..Default::default()
+        })
     }
 
     pub fn recently_played(&self, limit: i64) -> Result<Vec<Track>> {
@@ -262,7 +281,10 @@ impl Library {
     }
 
     pub fn set_favourite(&self, id: i64, fav: bool) -> Result<()> {
-        self.conn.execute("UPDATE tracks SET favourite=?2 WHERE id=?1", params![id, fav as i64])?;
+        self.conn.execute(
+            "UPDATE tracks SET favourite=?2 WHERE id=?1",
+            params![id, fav as i64],
+        )?;
         Ok(())
     }
 
@@ -272,7 +294,10 @@ impl Library {
             "UPDATE tracks SET play_count=play_count+1, last_played=?2 WHERE id=?1",
             params![id, t],
         )?;
-        self.conn.execute("INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)", params![id, t])?;
+        self.conn.execute(
+            "INSERT INTO play_history (track_id, played_at) VALUES (?1, ?2)",
+            params![id, t],
+        )?;
         Ok(())
     }
 
@@ -288,7 +313,8 @@ impl Library {
     }
 
     pub fn clear_edit(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM track_edits WHERE track_id=?1", [id])?;
+        self.conn
+            .execute("DELETE FROM track_edits WHERE track_id=?1", [id])?;
         Ok(())
     }
 
@@ -307,12 +333,19 @@ impl Library {
     pub fn known_path(&self, path: &str) -> Result<Option<(i64, i64)>> {
         Ok(self
             .conn
-            .query_row("SELECT id, size_bytes FROM tracks WHERE path=?1", [path], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT id, size_bytes FROM tracks WHERE path=?1",
+                [path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?)
     }
 
     pub fn track_by_hash(&self, hash: &str) -> Result<Option<i64>> {
-        Ok(self.conn.query_row("SELECT id FROM tracks WHERE hash=?1", [hash], |r| r.get(0)).optional()?)
+        Ok(self
+            .conn
+            .query_row("SELECT id FROM tracks WHERE hash=?1", [hash], |r| r.get(0))
+            .optional()?)
     }
 
     // ---- lyrics -----------------------------------------------------------
@@ -320,18 +353,28 @@ impl Library {
     pub fn get_lyrics(&self, id: i64) -> Result<(Option<String>, i64)> {
         Ok(self
             .conn
-            .query_row("SELECT lyrics, lyrics_offset_ms FROM tracks WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT lyrics, lyrics_offset_ms FROM tracks WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?
             .unwrap_or((None, 0)))
     }
 
     pub fn set_lyrics(&self, id: i64, lyrics: Option<&str>) -> Result<()> {
-        self.conn.execute("UPDATE tracks SET lyrics=?2 WHERE id=?1", params![id, lyrics])?;
+        self.conn.execute(
+            "UPDATE tracks SET lyrics=?2 WHERE id=?1",
+            params![id, lyrics],
+        )?;
         Ok(())
     }
 
     pub fn set_lyrics_offset(&self, id: i64, ms: i64) -> Result<()> {
-        self.conn.execute("UPDATE tracks SET lyrics_offset_ms=?2 WHERE id=?1", params![id, ms])?;
+        self.conn.execute(
+            "UPDATE tracks SET lyrics_offset_ms=?2 WHERE id=?1",
+            params![id, ms],
+        )?;
         Ok(())
     }
 
@@ -369,7 +412,12 @@ impl Library {
             WHERE artist <> '' AND artist LIKE ?1 GROUP BY artist ORDER BY artist COLLATE NOCASE";
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map([like], |r| {
-            Ok(ArtistSummary { artist: r.get(0)?, artwork: r.get(1)?, track_count: r.get(2)?, album_count: r.get(3)? })
+            Ok(ArtistSummary {
+                artist: r.get(0)?,
+                artwork: r.get(1)?,
+                track_count: r.get(2)?,
+                album_count: r.get(3)?,
+            })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
@@ -397,17 +445,24 @@ impl Library {
             return Err(Error::Msg("Playlist name cannot be empty".into()));
         }
         let t = now();
-        self.conn.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?1,?2,?2)", params![name, t])?;
+        self.conn.execute(
+            "INSERT INTO playlists (name, created_at, updated_at) VALUES (?1,?2,?2)",
+            params![name, t],
+        )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn rename_playlist(&self, id: i64, name: &str) -> Result<()> {
-        self.conn.execute("UPDATE playlists SET name=?2, updated_at=?3 WHERE id=?1", params![id, name.trim(), now()])?;
+        self.conn.execute(
+            "UPDATE playlists SET name=?2, updated_at=?3 WHERE id=?1",
+            params![id, name.trim(), now()],
+        )?;
         Ok(())
     }
 
     pub fn delete_playlist(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM playlists WHERE id=?1", [id])?;
+        self.conn
+            .execute("DELETE FROM playlists WHERE id=?1", [id])?;
         Ok(())
     }
 
@@ -432,7 +487,9 @@ impl Library {
     }
 
     pub fn playlist_track_ids(&self, id: i64) -> Result<Vec<i64>> {
-        let mut stmt = self.conn.prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1 ORDER BY position")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id FROM playlist_tracks WHERE playlist_id=?1 ORDER BY position",
+        )?;
         let rows = stmt.query_map([id], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
@@ -443,27 +500,29 @@ impl Library {
     }
 
     pub fn add_to_playlist(&self, id: i64, track_ids: &[i64]) -> Result<usize> {
-        let mut pos: i64 = self.conn.query_row(
+        let start: i64 = self.conn.query_row(
             "SELECT COALESCE(MAX(position)+1, 0) FROM playlist_tracks WHERE playlist_id=?1",
             [id],
             |r| r.get(0),
         )?;
-        let mut added = 0;
-        for tid in track_ids {
+        for (i, tid) in track_ids.iter().enumerate() {
             self.conn.execute(
                 "INSERT INTO playlist_tracks (playlist_id, position, track_id) VALUES (?1,?2,?3)",
-                params![id, pos, tid],
+                params![id, start + i as i64, tid],
             )?;
-            pos += 1;
-            added += 1;
         }
-        self.conn.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, now()])?;
-        Ok(added)
+        self.conn.execute(
+            "UPDATE playlists SET updated_at=?2 WHERE id=?1",
+            params![id, now()],
+        )?;
+        Ok(track_ids.len())
     }
 
-    /// Remove the entry at a given position (not by track id, so duplicates are safe).
     pub fn remove_from_playlist(&self, id: i64, position: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM playlist_tracks WHERE playlist_id=?1 AND position=?2", params![id, position])?;
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id=?1 AND position=?2",
+            params![id, position],
+        )?;
         self.renumber(id)
     }
 
@@ -486,7 +545,10 @@ impl Library {
                 params![id, i as i64, tid],
             )?;
         }
-        tx.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, now()])?;
+        tx.execute(
+            "UPDATE playlists SET updated_at=?2 WHERE id=?1",
+            params![id, now()],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -497,7 +559,9 @@ impl Library {
     }
 
     pub fn duplicate_playlist(&self, id: i64) -> Result<i64> {
-        let name: String = self.conn.query_row("SELECT name FROM playlists WHERE id=?1", [id], |r| r.get(0))?;
+        let name: String =
+            self.conn
+                .query_row("SELECT name FROM playlists WHERE id=?1", [id], |r| r.get(0))?;
         let new = self.create_playlist(&format!("{name} (copy)"))?;
         let ids = self.playlist_track_ids(id)?;
         self.add_to_playlist(new, &ids)?;
@@ -507,7 +571,12 @@ impl Library {
     // ---- settings / state -------------------------------------------------
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        Ok(self.conn.query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()?)
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM settings WHERE key=?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?)
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
@@ -534,7 +603,13 @@ impl Library {
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn update_import_job(&self, id: i64, status: &str, progress: f64, message: &str) -> Result<()> {
+    pub fn update_import_job(
+        &self,
+        id: i64,
+        status: &str,
+        progress: f64,
+        message: &str,
+    ) -> Result<()> {
         self.conn.execute(
             "UPDATE import_jobs SET status=?2, progress=?3, message=?4 WHERE id=?1",
             params![id, status, progress, message],
@@ -569,7 +644,10 @@ impl Library {
     }
 
     pub fn clear_finished_jobs(&self) -> Result<()> {
-        self.conn.execute("DELETE FROM import_jobs WHERE status IN ('done','failed','cancelled','interrupted')", [])?;
+        self.conn.execute(
+            "DELETE FROM import_jobs WHERE status IN ('done','failed','cancelled','interrupted')",
+            [],
+        )?;
         Ok(())
     }
 }

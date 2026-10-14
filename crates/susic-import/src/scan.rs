@@ -6,7 +6,11 @@ use walkdir::WalkDir;
 /// so callers can cancel long scans.
 pub fn scan_folder(root: &Path, keep_going: &mut dyn FnMut(&Path) -> bool) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    for entry in WalkDir::new(root).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if !entry.file_type().is_file() {
             continue;
         }
