@@ -35,7 +35,11 @@ impl PlayQueue {
 
     pub fn set(&mut self, items: Vec<i64>, start: usize) {
         self.items = items;
-        self.current = if self.items.is_empty() { None } else { Some(start.min(self.items.len() - 1)) };
+        self.current = if self.items.is_empty() {
+            None
+        } else {
+            Some(start.min(self.items.len() - 1))
+        };
         self.rebuild_order();
     }
 
@@ -185,7 +189,11 @@ impl PlayQueue {
         self.items.remove(index);
         match self.current {
             Some(c) if c == index => {
-                self.current = if self.items.is_empty() { None } else { Some(index.min(self.items.len() - 1)) };
+                self.current = if self.items.is_empty() {
+                    None
+                } else {
+                    Some(index.min(self.items.len() - 1))
+                };
             }
             Some(c) if c > index => self.current = Some(c - 1),
             _ => {}

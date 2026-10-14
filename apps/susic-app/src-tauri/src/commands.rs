@@ -64,8 +64,12 @@ pub struct Home {
 pub fn home(c: Ctl) -> R<Home> {
     let cont = c.state.lock().unwrap().track_id;
     c.with_lib(|l| {
-        let fav_albums: Vec<AlbumSummary> =
-            l.albums(None)?.into_iter().filter(|a| a.favourite_count > 0).take(12).collect();
+        let fav_albums: Vec<AlbumSummary> = l
+            .albums(None)?
+            .into_iter()
+            .filter(|a| a.favourite_count > 0)
+            .take(12)
+            .collect();
         Ok(Home {
             recently_played: l.recently_played(12)?,
             continue_listening: match cont {
@@ -92,7 +96,10 @@ pub fn home(c: Ctl) -> R<Home> {
 #[tauri::command]
 pub fn set_favourite(c: Ctl, id: i64, favourite: bool) -> R<()> {
     c.with_lib(|l| l.set_favourite(id, favourite))?;
-    c.emit("library://changed", json!({ "reason": "favourite", "id": id, "favourite": favourite }));
+    c.emit(
+        "library://changed",
+        json!({ "reason": "favourite", "id": id, "favourite": favourite }),
+    );
     Ok(())
 }
 
@@ -115,7 +122,8 @@ pub fn remove_track(c: Ctl, id: i64) -> R<()> {
 pub fn delete_track_file(c: Ctl, id: i64) -> R<()> {
     let t = c.with_lib(|l| l.get_track(id))?.ok_or("Track not found")?;
     c.with_lib(|l| l.remove_track(id))?;
-    std::fs::remove_file(&t.path).map_err(|e| format!("Removed from library, but the file could not be deleted: {e}"))?;
+    std::fs::remove_file(&t.path)
+        .map_err(|e| format!("Removed from library, but the file could not be deleted: {e}"))?;
     c.emit("library://changed", json!({ "reason": "remove" }));
     Ok(())
 }
@@ -124,7 +132,12 @@ pub fn delete_track_file(c: Ctl, id: i64) -> R<()> {
 
 #[tauri::command]
 pub fn import_paths(c: Ctl, paths: Vec<String>) -> R<()> {
-    importer::spawn_import(c.inner().clone(), paths.into_iter().map(PathBuf::from).collect(), "local", true)
+    importer::spawn_import(
+        c.inner().clone(),
+        paths.into_iter().map(PathBuf::from).collect(),
+        "local",
+        true,
+    )
 }
 
 #[tauri::command]
@@ -269,23 +282,47 @@ pub fn export_playlists(c: Ctl) -> R<String> {
             "tracks": tracks.iter().map(|t| json!({"title": t.title, "artist": t.artist, "album": t.album, "hash": t.hash})).collect::<Vec<_>>()
         }));
     }
-    serde_json::to_string_pretty(&json!({ "susic_playlists": 1, "playlists": out })).map_err(|e| e.to_string())
+    serde_json::to_string_pretty(&json!({ "susic_playlists": 1, "playlists": out }))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn import_playlists(c: Ctl, json: String) -> R<usize> {
-    let v: Value = serde_json::from_str(&json).map_err(|_| "That is not a valid Susic playlist file".to_string())?;
-    let pls = v.get("playlists").and_then(|p| p.as_array()).ok_or("That is not a valid Susic playlist file")?;
+    let v: Value = serde_json::from_str(&json)
+        .map_err(|_| "That is not a valid Susic playlist file".to_string())?;
+    let pls = v
+        .get("playlists")
+        .and_then(|p| p.as_array())
+        .ok_or("That is not a valid Susic playlist file")?;
     let all = c.with_lib(|l| l.list_tracks(&TrackQuery::default()))?;
     let mut created = 0;
     for p in pls {
-        let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("Imported playlist");
+        let name = p
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Imported playlist");
         let mut ids = vec![];
-        for t in p.get("tracks").and_then(|t| t.as_array()).into_iter().flatten() {
+        for t in p
+            .get("tracks")
+            .and_then(|t| t.as_array())
+            .into_iter()
+            .flatten()
+        {
             let hash = t.get("hash").and_then(|h| h.as_str()).unwrap_or("");
-            let title = t.get("title").and_then(|h| h.as_str()).unwrap_or("").to_lowercase();
-            let artist = t.get("artist").and_then(|h| h.as_str()).unwrap_or("").to_lowercase();
-            if let Some(m) = all.iter().find(|x| (!hash.is_empty() && x.hash == hash) || (x.title.to_lowercase() == title && x.artist.to_lowercase() == artist)) {
+            let title = t
+                .get("title")
+                .and_then(|h| h.as_str())
+                .unwrap_or("")
+                .to_lowercase();
+            let artist = t
+                .get("artist")
+                .and_then(|h| h.as_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if let Some(m) = all.iter().find(|x| {
+                (!hash.is_empty() && x.hash == hash)
+                    || (x.title.to_lowercase() == title && x.artist.to_lowercase() == artist)
+            }) {
                 ids.push(m.id);
             }
         }
@@ -318,11 +355,23 @@ pub fn queue_get(c: Ctl) -> R<QueueView> {
     if tracks.len() != q.items.len() {
         let mut fixed = q.clone();
         fixed.items = tracks.iter().map(|t| t.id).collect();
-        fixed.current = fixed.current.map(|i| i.min(fixed.items.len().saturating_sub(1)));
+        fixed.current = fixed
+            .current
+            .map(|i| i.min(fixed.items.len().saturating_sub(1)));
         *c.queue.lock().unwrap() = fixed.clone();
-        return Ok(QueueView { tracks, current: fixed.current, shuffle: fixed.shuffle, repeat: fixed.repeat });
+        return Ok(QueueView {
+            tracks,
+            current: fixed.current,
+            shuffle: fixed.shuffle,
+            repeat: fixed.repeat,
+        });
     }
-    Ok(QueueView { tracks, current: q.current, shuffle: q.shuffle, repeat: q.repeat })
+    Ok(QueueView {
+        tracks,
+        current: q.current,
+        shuffle: q.shuffle,
+        repeat: q.repeat,
+    })
 }
 
 #[tauri::command]
@@ -441,7 +490,11 @@ pub struct LyricsPayload {
 pub fn get_lyrics(c: Ctl, id: i64) -> R<LyricsPayload> {
     let (raw, offset) = c.with_lib(|l| l.get_lyrics(id))?;
     let lyrics = raw.as_deref().map(Lyrics::parse).unwrap_or_default();
-    Ok(LyricsPayload { lyrics, offset_ms: offset, raw })
+    Ok(LyricsPayload {
+        lyrics,
+        offset_ms: offset,
+        raw,
+    })
 }
 
 #[tauri::command]
@@ -460,7 +513,10 @@ pub fn set_lyrics_offset(c: Ctl, id: i64, offset_ms: i64) -> R<()> {
 #[tauri::command]
 pub async fn fetch_lyrics_online(c: Ctl<'_>, id: i64) -> R<bool> {
     let t = c.with_lib(|l| l.get_track(id))?.ok_or("Track not found")?;
-    let enabled = c.with_lib(|l| l.get_setting("lrclib_enabled"))?.map(|v| v == "true").unwrap_or(false);
+    let enabled = c
+        .with_lib(|l| l.get_setting("lrclib_enabled"))?
+        .map(|v| v == "true")
+        .unwrap_or(false);
     if !enabled {
         return Err("Online lyrics lookup is turned off. Enable LRCLIB in Settings.".into());
     }
@@ -523,7 +579,9 @@ fn walk(p: &std::path::Path) -> u64 {
 
 pub fn free_space(p: &std::path::Path) -> u64 {
     use std::os::unix::ffi::OsStrExt;
-    let Ok(cpath) = std::ffi::CString::new(p.as_os_str().as_bytes()) else { return 0 };
+    let Ok(cpath) = std::ffi::CString::new(p.as_os_str().as_bytes()) else {
+        return 0;
+    };
     unsafe {
         let mut s: libc::statvfs = std::mem::zeroed();
         if libc::statvfs(cpath.as_ptr(), &mut s) == 0 {
@@ -582,4 +640,35 @@ pub fn read_text_file(path: String) -> R<String> {
         return Err("File is too large".into());
     }
     std::fs::read_to_string(path).map_err(|e| e.to_string())
+}
+
+/// Android: open the system file picker; chosen files are copied into the app's
+/// private music folder and their paths returned for import.
+#[tauri::command]
+pub async fn pick_audio(app: tauri::AppHandle, c: Ctl<'_>) -> R<Vec<String>> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        #[derive(serde::Deserialize)]
+        struct Picked {
+            paths: Vec<String>,
+        }
+        let handle = app
+            .state::<tauri_plugin_susic_player::SusicPlayer<tauri::Wry>>()
+            .0
+            .clone();
+        let dest = c.music_dir.to_string_lossy().into_owned();
+        let res = tauri::async_runtime::spawn_blocking(move || {
+            handle.run_mobile_plugin::<Picked>("pickAudio", serde_json::json!({ "dest": dest }))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        Ok(res.paths)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, c);
+        Err("The system file picker import is Android-only".into())
+    }
 }

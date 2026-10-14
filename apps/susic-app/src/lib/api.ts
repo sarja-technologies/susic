@@ -96,7 +96,7 @@ export const api = {
   syncDisconnect: () => invoke<void>('sync_disconnect'),
   syncReceive: (req: { tracks: RemoteTrack[]; playlists: { name: string; track_ids: number[] }[] }) => invoke<void>('sync_receive', { req }),
   // Android-only
-  pickAudio: () => invoke<string[]>('plugin:susic-player|pick_audio'),
+  pickAudio: () => invoke<string[]>('pick_audio'),
 };
 
 export function on<T>(event: string, cb: (payload: T) => void): Promise<UnlistenFn> {

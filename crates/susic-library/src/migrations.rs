@@ -64,7 +64,8 @@ const MIGRATIONS: &[&str] = &[
 ];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    let current: usize = conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? as usize;
+    let current: usize =
+        conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? as usize;
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(sql)?;
@@ -74,4 +75,5 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub const LATEST: usize = MIGRATIONS.len();

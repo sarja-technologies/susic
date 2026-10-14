@@ -17,7 +17,12 @@ pub struct ImportSummary {
 /// Import files and/or folders on a background thread, emitting
 /// `import://progress` and `import://done`. Unchanged files (same path + size)
 /// are skipped so rescans stay cheap.
-pub fn spawn_import(c: Arc<Controller>, inputs: Vec<PathBuf>, source: &'static str, force: bool) -> Result<(), String> {
+pub fn spawn_import(
+    c: Arc<Controller>,
+    inputs: Vec<PathBuf>,
+    source: &'static str,
+    force: bool,
+) -> Result<(), String> {
     if c.scanning.swap(true, Ordering::SeqCst) {
         return Err("An import is already running".into());
     }
@@ -31,12 +36,19 @@ pub fn spawn_import(c: Arc<Controller>, inputs: Vec<PathBuf>, source: &'static s
     Ok(())
 }
 
-pub fn run_import(c: &Arc<Controller>, inputs: Vec<PathBuf>, source: &str, force: bool) -> ImportSummary {
+pub fn run_import(
+    c: &Arc<Controller>,
+    inputs: Vec<PathBuf>,
+    source: &str,
+    force: bool,
+) -> ImportSummary {
     let mut summary = ImportSummary::default();
     let mut files: Vec<PathBuf> = Vec::new();
     for p in inputs {
         if p.is_dir() {
-            files.extend(susic_import::scan::scan_folder(&p, &mut |_| !c.cancel_scan.load(Ordering::Relaxed)));
+            files.extend(susic_import::scan::scan_folder(&p, &mut |_| {
+                !c.cancel_scan.load(Ordering::Relaxed)
+            }));
         } else if p.is_file() {
             files.push(p);
         }

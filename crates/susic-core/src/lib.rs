@@ -6,6 +6,6 @@ pub mod lyrics;
 pub mod model;
 pub mod queue;
 
-pub use lyrics::{Lyrics, LyricLine};
+pub use lyrics::{LyricLine, Lyrics};
 pub use model::*;
 pub use queue::{PlayQueue, RepeatMode};

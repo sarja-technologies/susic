@@ -43,17 +43,23 @@ pub fn fingerprint(path: &Path) -> std::io::Result<(String, u64)> {
 }
 
 fn title_from_filename(path: &Path) -> String {
-    path.file_stem().map(|s| s.to_string_lossy().replace('_', " ")).unwrap_or_else(|| "Unknown".into())
+    path.file_stem()
+        .map(|s| s.to_string_lossy().replace('_', " "))
+        .unwrap_or_else(|| "Unknown".into())
 }
 
 /// Read tags, duration, embedded artwork and lyrics from `path`.
 /// Artwork is written as a ≤512px JPEG thumbnail into `artwork_dir`.
 pub fn read_track(path: &Path, artwork_dir: &Path, source: &str) -> Result<NewTrack> {
-    let tagged = lofty::read_from_path(path).map_err(|e| Error::Unsupported(format!("{}: {e}", path.display())))?;
+    let tagged = lofty::read_from_path(path)
+        .map_err(|e| Error::Unsupported(format!("{}: {e}", path.display())))?;
     let props = tagged.properties();
     let duration_ms = props.duration().as_millis() as i64;
     let (hash, size) = fingerprint(path)?;
-    let format = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let format = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
 
     let mut t = NewTrack {
         path: path.to_string_lossy().into_owned(),
@@ -66,14 +72,29 @@ pub fn read_track(path: &Path, artwork_dir: &Path, source: &str) -> Result<NewTr
     };
     let mut artwork_bytes: Option<Vec<u8>> = None;
     if let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) {
-        t.title = tag.title().map(|s| s.trim().to_string()).unwrap_or_default();
-        t.artist = tag.artist().map(|s| s.trim().to_string()).unwrap_or_default();
-        t.album = tag.album().map(|s| s.trim().to_string()).unwrap_or_default();
-        t.album_artist = tag.get_string(&ItemKey::AlbumArtist).unwrap_or("").trim().to_string();
+        t.title = tag
+            .title()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        t.artist = tag
+            .artist()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        t.album = tag
+            .album()
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        t.album_artist = tag
+            .get_string(&ItemKey::AlbumArtist)
+            .unwrap_or("")
+            .trim()
+            .to_string();
         t.track_no = tag.track().map(|n| n as i64);
         t.disc_no = tag.disk().map(|n| n as i64);
         t.year = tag.year().map(|y| y as i64).or_else(|| {
-            tag.get_string(&ItemKey::RecordingDate).and_then(|s| s.get(..4)).and_then(|s| s.parse().ok())
+            tag.get_string(&ItemKey::RecordingDate)
+                .and_then(|s| s.get(..4))
+                .and_then(|s| s.parse().ok())
         });
         t.lyrics = tag
             .get_string(&ItemKey::Lyrics)
@@ -97,7 +118,9 @@ pub fn read_track(path: &Path, artwork_dir: &Path, source: &str) -> Result<NewTr
     }
     t.artwork = match artwork_bytes {
         Some(b) => save_thumbnail(&b, artwork_dir),
-        None => folder_artwork(path).and_then(|p| std::fs::read(p).ok()).and_then(|b| save_thumbnail(&b, artwork_dir)),
+        None => folder_artwork(path)
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|b| save_thumbnail(&b, artwork_dir)),
     };
     Ok(t)
 }
@@ -106,7 +129,11 @@ pub fn read_track(path: &Path, artwork_dir: &Path, source: &str) -> Result<NewTr
 pub fn read_lrc_sidecar(audio: &Path) -> Option<String> {
     let lrc: PathBuf = audio.with_extension("lrc");
     let upper: PathBuf = audio.with_extension("LRC");
-    [lrc, upper].into_iter().find(|p| p.is_file()).and_then(|p| std::fs::read_to_string(p).ok()).filter(|s| !s.trim().is_empty())
+    [lrc, upper]
+        .into_iter()
+        .find(|p| p.is_file())
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .filter(|s| !s.trim().is_empty())
 }
 
 fn folder_artwork(audio: &Path) -> Option<PathBuf> {
@@ -132,8 +159,14 @@ pub fn save_thumbnail(bytes: &[u8], dir: &Path) -> Option<String> {
     }
     std::fs::create_dir_all(dir).ok()?;
     let img = image::load_from_memory(bytes).ok()?;
-    let img = if img.width() > 512 || img.height() > 512 { img.thumbnail(512, 512) } else { img };
-    img.to_rgb8().save_with_format(&out, image::ImageFormat::Jpeg).ok()?;
+    let img = if img.width() > 512 || img.height() > 512 {
+        img.thumbnail(512, 512)
+    } else {
+        img
+    };
+    img.to_rgb8()
+        .save_with_format(&out, image::ImageFormat::Jpeg)
+        .ok()?;
     Some(out.to_string_lossy().into_owned())
 }
 

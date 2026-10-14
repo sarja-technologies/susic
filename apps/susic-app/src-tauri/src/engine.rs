@@ -4,9 +4,14 @@
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum EngineEvent {
     /// Periodic transport state.
-    State { playing: bool, position_ms: i64, duration_ms: i64 },
+    State {
+        playing: bool,
+        position_ms: i64,
+        duration_ms: i64,
+    },
     /// Current media finished naturally.
     Ended,
     Error(String),
@@ -15,6 +20,7 @@ pub enum EngineEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum RemoteCommand {
     Play,
     Pause,
@@ -25,6 +31,7 @@ pub enum RemoteCommand {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct MediaInfo {
     pub path: String,
     pub title: String,
@@ -101,14 +108,20 @@ pub mod desktop {
     fn open(path: &str) -> Result<Decoder<BufReader<std::fs::File>>, String> {
         let f = std::fs::File::open(path).map_err(|e| format!("Cannot open file: {e}"))?;
         let len = f.metadata().map(|m| m.len()).unwrap_or(0);
-        let mut b = Decoder::builder().with_data(BufReader::new(f)).with_seekable(true);
+        let mut b = Decoder::builder()
+            .with_data(BufReader::new(f))
+            .with_seekable(true);
         if len > 0 {
             b = b.with_byte_len(len);
         }
-        if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
             b = b.with_hint(ext);
         }
-        b.build().map_err(|e| format!("Unsupported or corrupt audio: {e}"))
+        b.build()
+            .map_err(|e| format!("Unsupported or corrupt audio: {e}"))
     }
 
     fn audio_thread(rx: mpsc::Receiver<Cmd>, sink: EventSink) {
@@ -137,7 +150,9 @@ pub mod desktop {
                                     device = Some(d)
                                 }
                                 Err(e) => {
-                                    sink(EngineEvent::Error(format!("No audio output available: {e}")));
+                                    sink(EngineEvent::Error(format!(
+                                        "No audio output available: {e}"
+                                    )));
                                     continue;
                                 }
                             }
@@ -223,13 +238,159 @@ pub mod desktop {
     }
 }
 
-/// Placeholder until the Android Media3 plugin is attached.
-pub struct NullEngine;
-impl Engine for NullEngine {
-    fn load(&self, _: MediaInfo, _: i64, _: bool) {}
-    fn play(&self) {}
-    fn pause(&self) {}
-    fn seek(&self, _: i64) {}
-    fn set_volume(&self, _: f32) {}
-    fn stop(&self) {}
+#[cfg(target_os = "android")]
+pub mod android {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+    use std::time::Duration;
+    use tauri::plugin::PluginHandle;
+    use tauri::Wry;
+
+    enum Cmd {
+        Load(MediaInfo, i64, bool),
+        Play,
+        Pause,
+        Seek(i64),
+        Volume(f32),
+        Stop,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LoadArgs {
+        path: String,
+        title: String,
+        artist: String,
+        album: String,
+        artwork: Option<String>,
+        start_ms: i64,
+        autoplay: bool,
+    }
+
+    #[derive(Deserialize, Default)]
+    #[serde(rename_all = "camelCase")]
+    struct StateResp {
+        playing: bool,
+        position_ms: i64,
+        duration_ms: i64,
+        loaded: bool,
+        #[serde(default)]
+        events: Vec<String>,
+    }
+
+    /// Talks to the Kotlin Media3 plugin from a dedicated thread so the UI/main
+    /// thread is never blocked on a JNI round-trip.
+    pub struct AndroidEngine {
+        tx: Sender<Cmd>,
+    }
+
+    impl AndroidEngine {
+        pub fn new(handle: PluginHandle<Wry>, sink: EventSink) -> Self {
+            let (tx, rx) = mpsc::channel::<Cmd>();
+            std::thread::Builder::new()
+                .name("susic-media3".into())
+                .spawn(move || {
+                    let mut active = false;
+                    let mut duration = 0i64;
+                    loop {
+                        let wait = if active { 250 } else { 1000 };
+                        match rx.recv_timeout(Duration::from_millis(wait)) {
+                            Ok(cmd) => {
+                                let r: Result<(), _> = match cmd {
+                                    Cmd::Load(m, start, autoplay) => {
+                                        duration = m.duration_ms;
+                                        active = true;
+                                        handle.run_mobile_plugin(
+                                            "load",
+                                            LoadArgs {
+                                                path: m.path,
+                                                title: m.title,
+                                                artist: m.artist,
+                                                album: m.album,
+                                                artwork: m.artwork,
+                                                start_ms: start,
+                                                autoplay,
+                                            },
+                                        )
+                                    }
+                                    Cmd::Play => handle.run_mobile_plugin("play", ()),
+                                    Cmd::Pause => handle.run_mobile_plugin("pause", ()),
+                                    Cmd::Seek(ms) => handle.run_mobile_plugin(
+                                        "seek",
+                                        serde_json::json!({ "positionMs": ms }),
+                                    ),
+                                    Cmd::Volume(v) => handle.run_mobile_plugin(
+                                        "setVolume",
+                                        serde_json::json!({ "volume": v }),
+                                    ),
+                                    Cmd::Stop => {
+                                        active = false;
+                                        handle.run_mobile_plugin("stop", ())
+                                    }
+                                };
+                                if let Err(e) = r {
+                                    sink(EngineEvent::Error(format!("Playback error: {e}")));
+                                }
+                            }
+                            Err(RecvTimeoutError::Timeout) => {}
+                            Err(RecvTimeoutError::Disconnected) => return,
+                        }
+                        if !active {
+                            // Still drain remote-control events (e.g. notification buttons).
+                        }
+                        if let Ok(st) = handle.run_mobile_plugin::<StateResp>("state", ()) {
+                            let mut ended = false;
+                            for ev in st.events {
+                                match ev.as_str() {
+                                    "ended" => ended = true,
+                                    "next" => sink(EngineEvent::Remote(RemoteCommand::Next)),
+                                    "prev" => sink(EngineEvent::Remote(RemoteCommand::Prev)),
+                                    e if e.starts_with("error:") => {
+                                        sink(EngineEvent::Error(e[6..].to_string()))
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if ended {
+                                sink(EngineEvent::Ended);
+                            } else if active && st.loaded {
+                                sink(EngineEvent::State {
+                                    playing: st.playing,
+                                    position_ms: st.position_ms,
+                                    duration_ms: if st.duration_ms > 0 {
+                                        st.duration_ms
+                                    } else {
+                                        duration
+                                    },
+                                });
+                            }
+                        }
+                    }
+                })
+                .expect("spawn media3 thread");
+            Self { tx }
+        }
+    }
+
+    impl Engine for AndroidEngine {
+        fn load(&self, media: MediaInfo, start_ms: i64, autoplay: bool) {
+            let _ = self.tx.send(Cmd::Load(media, start_ms, autoplay));
+        }
+        fn play(&self) {
+            let _ = self.tx.send(Cmd::Play);
+        }
+        fn pause(&self) {
+            let _ = self.tx.send(Cmd::Pause);
+        }
+        fn seek(&self, ms: i64) {
+            let _ = self.tx.send(Cmd::Seek(ms));
+        }
+        fn set_volume(&self, v: f32) {
+            let _ = self.tx.send(Cmd::Volume(v));
+        }
+        fn stop(&self) {
+            let _ = self.tx.send(Cmd::Stop);
+        }
+    }
 }

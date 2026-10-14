@@ -2497,6 +2497,102 @@
           "type": "string",
           "const": "opener:deny-reveal-item-in-dir",
           "markdownDescription": "Denies the reveal_item_in_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-load",
+          "markdownDescription": "Enables the load command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-pause",
+          "markdownDescription": "Enables the pause command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-pick-audio",
+          "markdownDescription": "Enables the pick_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the play command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-play",
+          "markdownDescription": "Enables the play command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the seek command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-seek",
+          "markdownDescription": "Enables the seek command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_volume command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-set-volume",
+          "markdownDescription": "Enables the set_volume command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the state command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-state",
+          "markdownDescription": "Enables the state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:allow-stop",
+          "markdownDescription": "Enables the stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-load",
+          "markdownDescription": "Denies the load command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-pause",
+          "markdownDescription": "Denies the pause command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_audio command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-pick-audio",
+          "markdownDescription": "Denies the pick_audio command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the play command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-play",
+          "markdownDescription": "Denies the play command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the seek command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-seek",
+          "markdownDescription": "Denies the seek command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_volume command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-set-volume",
+          "markdownDescription": "Denies the set_volume command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the state command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-state",
+          "markdownDescription": "Denies the state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "susic-player:deny-stop",
+          "markdownDescription": "Denies the stop command without any pre-configured scope."
         }
       ]
     },

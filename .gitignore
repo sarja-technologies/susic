@@ -30,3 +30,8 @@ keystore.properties
 .env
 .env.*
 !crates/**/fixtures/**
+
+# plugin build outputs
+**/android/build/
+**/android/.gradle/
+.gradle/

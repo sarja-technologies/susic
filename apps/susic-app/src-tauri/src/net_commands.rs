@@ -37,14 +37,22 @@ pub struct UrlImport {
 #[tauri::command]
 pub fn import_url(c: Ctl, ex: State<Extras>, req: UrlImport) -> R<i64> {
     if cfg!(target_os = "android") {
-        return Err("URL import is not available on Android. Transfer music from Susic Desktop instead.".into());
+        return Err(
+            "URL import is not available on Android. Transfer music from Susic Desktop instead."
+                .into(),
+        );
     }
     susic_import::ytdlp::validate_url(&req.url)?;
     let dest = req
         .dest_dir
         .filter(|d| !d.trim().is_empty())
         .map(PathBuf::from)
-        .or_else(|| c.with_lib(|l| l.get_setting("import_dir")).ok().flatten().map(PathBuf::from))
+        .or_else(|| {
+            c.with_lib(|l| l.get_setting("import_dir"))
+                .ok()
+                .flatten()
+                .map(PathBuf::from)
+        })
         .unwrap_or_else(|| c.music_dir.clone());
     // Duplicate URL guard: skip if the same URL is queued/running.
     let dup = c
@@ -63,13 +71,25 @@ pub fn import_url(c: Ctl, ex: State<Extras>, req: UrlImport) -> R<i64> {
     Ok(id)
 }
 
-fn run_job(c: Arc<Controller>, id: i64, url: String, format: String, quality: u32, dest: PathBuf, cancel: Arc<AtomicBool>) {
+fn run_job(
+    c: Arc<Controller>,
+    id: i64,
+    url: String,
+    format: String,
+    quality: u32,
+    dest: PathBuf,
+    cancel: Arc<AtomicBool>,
+) {
     let set = |status: &str, p: f64, msg: &str| {
         let _ = c.with_lib(|l| l.update_import_job(id, status, p, msg));
         c.emit("jobs://changed", json!({}));
     };
     set("running", 0.0, "Starting…");
-    let opts = susic_import::ytdlp::Options { dest_dir: dest, format, quality };
+    let opts = susic_import::ytdlp::Options {
+        dest_dir: dest,
+        format,
+        quality,
+    };
     let mut last = std::time::Instant::now();
     let res = susic_import::ytdlp::run(&url, &opts, cancel.clone(), &mut |ev| {
         if let susic_import::ytdlp::Event::Progress(p, line) = ev {
@@ -88,7 +108,11 @@ fn run_job(c: Arc<Controller>, id: i64, url: String, format: String, quality: u3
             } else if !sum.failed.is_empty() && sum.added == 0 {
                 set("failed", 1.0, &sum.failed[0]);
             } else {
-                set("done", 1.0, &format!("Imported {} track(s)", sum.added + sum.updated));
+                set(
+                    "done",
+                    1.0,
+                    &format!("Imported {} track(s)", sum.added + sum.updated),
+                );
             }
             c.emit("library://changed", json!({ "reason": "import" }));
             c.emit("import://notify", json!({ "message": "Import complete" }));
@@ -129,7 +153,10 @@ impl Provider for LibProvider {
             .playlists()
             .unwrap_or_default()
             .into_iter()
-            .map(|p| susic_sync::RemotePlaylist { track_ids: l.playlist_track_ids(p.id).unwrap_or_default(), name: p.name })
+            .map(|p| susic_sync::RemotePlaylist {
+                track_ids: l.playlist_track_ids(p.id).unwrap_or_default(),
+                name: p.name,
+            })
             .collect();
         Manifest {
             device: hostname(),
@@ -174,7 +201,13 @@ impl Provider for LibProvider {
         std::fs::read(t.artwork?).ok()
     }
     fn lyrics(&self, id: i64) -> Option<String> {
-        self.0.lib.lock().unwrap().get_lyrics(id).ok().and_then(|(l, _)| l)
+        self.0
+            .lib
+            .lock()
+            .unwrap()
+            .get_lyrics(id)
+            .ok()
+            .and_then(|(l, _)| l)
     }
 }
 
@@ -206,16 +239,34 @@ pub fn share_start(c: Ctl, ex: State<Extras>) -> R<ShareInfo> {
     }
     let ctl = c.inner().clone();
     let emit_ctl = c.inner().clone();
-    let server = susic_sync::serve(Arc::new(LibProvider(ctl)), Duration::from_secs(15 * 60), move |ev| {
-        emit_ctl.emit("share://event", serde_json::to_value(&ev).unwrap_or_default());
-        let _ = matches!(ev, ServerEvent::Expired);
-    })
+    let server = susic_sync::serve(
+        Arc::new(LibProvider(ctl)),
+        Duration::from_secs(15 * 60),
+        move |ev| {
+            emit_ctl.emit(
+                "share://event",
+                serde_json::to_value(&ev).unwrap_or_default(),
+            );
+            let _ = matches!(ev, ServerEvent::Expired);
+        },
+    )
     .map_err(|e| e.to_string())?;
-    let host = susic_sync::local_ip().ok_or("No network connection found. Connect to a Wi-Fi or Ethernet network first.")?;
+    let host = susic_sync::local_ip()
+        .ok_or("No network connection found. Connect to a Wi-Fi or Ethernet network first.")?;
     let uri = susic_sync::pairing_uri(&host, server.port, &server.code);
     let qr = qrcode::QrCode::new(uri.as_bytes()).map_err(|e| e.to_string())?;
-    let svg = qr.render::<qrcode::render::svg::Color>().min_dimensions(220, 220).quiet_zone(true).build();
-    let info = ShareInfo { code: susic_sync::format_code(&server.code), host, port: server.port, uri, qr_svg: svg };
+    let svg = qr
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(220, 220)
+        .quiet_zone(true)
+        .build();
+    let info = ShareInfo {
+        code: susic_sync::format_code(&server.code),
+        host,
+        port: server.port,
+        uri,
+        qr_svg: svg,
+    };
     *ex.share.lock().unwrap() = Some(server);
     Ok(info)
 }
@@ -248,7 +299,8 @@ pub async fn sync_connect(ex: State<'_, Extras>, req: ConnectReq) -> R<Manifest>
         ),
     };
     let (client, manifest) = tauri::async_runtime::spawn_blocking(move || -> R<_> {
-        let mut c = susic_sync::Client::connect(host.trim(), port, &code).map_err(|e| e.to_string())?;
+        let mut c =
+            susic_sync::Client::connect(host.trim(), port, &code).map_err(|e| e.to_string())?;
         let m = c.manifest().map_err(|e| e.to_string())?;
         Ok((c, m))
     })
@@ -283,7 +335,12 @@ pub fn sync_receive(c: Ctl, ex: State<Extras>, req: ReceiveReq) -> R<()> {
     let need: i64 = req
         .tracks
         .iter()
-        .filter(|t| c.with_lib(|l| l.track_by_hash(&t.hash)).ok().flatten().is_none())
+        .filter(|t| {
+            c.with_lib(|l| l.track_by_hash(&t.hash))
+                .ok()
+                .flatten()
+                .is_none()
+        })
         .map(|t| t.size_bytes)
         .sum();
     let free = free_space(&c.music_dir) as i64;
@@ -302,16 +359,23 @@ pub fn sync_receive(c: Ctl, ex: State<Extras>, req: ReceiveReq) -> R<()> {
     std::thread::spawn(move || {
         let r = receive(&ctl, client, req);
         flag.store(false, Ordering::SeqCst);
-        ctl.emit("sync://done", match r {
-            Ok(v) => v,
-            Err(e) => json!({ "error": e }),
-        });
+        ctl.emit(
+            "sync://done",
+            match r {
+                Ok(v) => v,
+                Err(e) => json!({ "error": e }),
+            },
+        );
         ctl.emit("library://changed", json!({ "reason": "sync" }));
     });
     Ok(())
 }
 
-fn receive(c: &Arc<Controller>, mut client: susic_sync::Client, req: ReceiveReq) -> Result<serde_json::Value, String> {
+fn receive(
+    c: &Arc<Controller>,
+    mut client: susic_sync::Client,
+    req: ReceiveReq,
+) -> Result<serde_json::Value, String> {
     let dir = c.music_dir.join("received");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let total = req.tracks.len();
@@ -333,9 +397,13 @@ fn receive(c: &Arc<Controller>, mut client: susic_sync::Client, req: ReceiveReq)
             emit_progress(1.0);
             continue;
         }
-        let ext = if t.format.is_empty() { "audio" } else { &t.format };
-        let final_path = dir.join(format!("{}.{}", &t.hash, ext));
-        let part = dir.join(format!("{}.{}.part", &t.hash, ext));
+        let ext = if t.format.is_empty() {
+            "audio"
+        } else {
+            &t.format
+        };
+        let final_path = dir.join(format!("{}.{}", t.hash, ext));
+        let part = dir.join(format!("{}.{}.part", t.hash, ext));
         let offset = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
         let res = (|| -> Result<(), String> {
             let mut f = std::fs::OpenOptions::new()
@@ -345,7 +413,13 @@ fn receive(c: &Arc<Controller>, mut client: susic_sync::Client, req: ReceiveReq)
                 .map_err(|e| e.to_string())?;
             let cancel = AtomicBool::new(false);
             client
-                .fetch(t.id, offset, &mut f, |done, total| emit_progress(done as f64 / total.max(1) as f64), &cancel)
+                .fetch(
+                    t.id,
+                    offset,
+                    &mut f,
+                    |done, total| emit_progress(done as f64 / total.max(1) as f64),
+                    &cancel,
+                )
                 .map_err(|e| e.to_string())?;
             Ok(())
         })();
@@ -373,7 +447,9 @@ fn receive(c: &Arc<Controller>, mut client: susic_sync::Client, req: ReceiveReq)
                     nt.lyrics = client.lyrics(t.id).ok().flatten();
                 }
                 match c.with_lib(|l| l.upsert_track(&nt)) {
-                    Ok(Upsert::Inserted(id)) | Ok(Upsert::Updated(id)) | Ok(Upsert::Duplicate(id)) => {
+                    Ok(Upsert::Inserted(id))
+                    | Ok(Upsert::Updated(id))
+                    | Ok(Upsert::Duplicate(id)) => {
                         id_map.insert(t.id, id);
                         added += 1;
                     }
@@ -387,7 +463,11 @@ fn receive(c: &Arc<Controller>, mut client: susic_sync::Client, req: ReceiveReq)
         }
     }
     for p in &req.playlists {
-        let ids: Vec<i64> = p.track_ids.iter().filter_map(|i| id_map.get(i).copied()).collect();
+        let ids: Vec<i64> = p
+            .track_ids
+            .iter()
+            .filter_map(|i| id_map.get(i).copied())
+            .collect();
         if ids.is_empty() {
             continue;
         }
@@ -415,11 +495,18 @@ pub struct YtResult {
 /// are returned transiently and never stored; they link out to YouTube.
 #[tauri::command]
 pub async fn youtube_search(c: Ctl<'_>, query: String) -> R<Vec<YtResult>> {
-    let (enabled, key) = c.with_lib(|l| Ok((l.get_setting("youtube_enabled")?, l.get_setting("youtube_api_key")?)))?;
+    let (enabled, key) = c.with_lib(|l| {
+        Ok((
+            l.get_setting("youtube_enabled")?,
+            l.get_setting("youtube_api_key")?,
+        ))
+    })?;
     if enabled.as_deref() != Some("true") {
         return Err("YouTube discovery is turned off in Settings".into());
     }
-    let key = key.filter(|k| !k.trim().is_empty()).ok_or("Add your YouTube Data API key in Settings")?;
+    let key = key
+        .filter(|k| !k.trim().is_empty())
+        .ok_or("Add your YouTube Data API key in Settings")?;
     tauri::async_runtime::spawn_blocking(move || -> R<Vec<YtResult>> {
         let resp = ureq::get("https://www.googleapis.com/youtube/v3/search")
             .query("part", "snippet")
@@ -431,7 +518,9 @@ pub async fn youtube_search(c: Ctl<'_>, query: String) -> R<Vec<YtResult>> {
             .timeout(Duration::from_secs(10))
             .call()
             .map_err(|e| match e {
-                ureq::Error::Status(403, _) => "YouTube refused the request — check your API key and quota".to_string(),
+                ureq::Error::Status(403, _) => {
+                    "YouTube refused the request — check your API key and quota".to_string()
+                }
                 ureq::Error::Status(400, _) => "YouTube rejected the API key".to_string(),
                 e => format!("YouTube request failed: {e}"),
             })?;
@@ -445,8 +534,14 @@ pub async fn youtube_search(c: Ctl<'_>, query: String) -> R<Vec<YtResult>> {
                         Some(YtResult {
                             id: i["id"]["videoId"].as_str()?.to_string(),
                             title: i["snippet"]["title"].as_str()?.to_string(),
-                            channel: i["snippet"]["channelTitle"].as_str().unwrap_or("").to_string(),
-                            thumb: i["snippet"]["thumbnails"]["default"]["url"].as_str().unwrap_or("").to_string(),
+                            channel: i["snippet"]["channelTitle"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string(),
+                            thumb: i["snippet"]["thumbnails"]["default"]["url"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string(),
                         })
                     })
                     .collect()

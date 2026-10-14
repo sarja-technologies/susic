@@ -4206,6 +4206,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tauri-plugin-susic-player",
  "thiserror 2.0.21",
  "ureq",
 ]
@@ -4779,6 +4780,16 @@ dependencies = [
  "url",
  "windows 0.62.2",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-susic-player"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

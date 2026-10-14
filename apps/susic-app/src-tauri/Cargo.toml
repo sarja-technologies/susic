@@ -22,6 +22,8 @@ susic-core = { path = "../../../crates/susic-core" }
 susic-library = { path = "../../../crates/susic-library" }
 susic-import = { path = "../../../crates/susic-import" }
 susic-sync = { path = "../../../crates/susic-sync" }
+tauri-plugin-susic-player = { path = "../../../crates/tauri-plugin-susic-player" }
+ureq = { version = "2", features = ["json"] }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 libc = "0.2.190"
 tauri-plugin-opener = "2"
@@ -29,4 +31,3 @@ tauri-plugin-opener = "2"
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rodio = { version = "0.23", default-features = false, features = ["playback", "symphonia-all"] }
 souvlaki = "0.8"
-ureq = { version = "2", features = ["json"] }

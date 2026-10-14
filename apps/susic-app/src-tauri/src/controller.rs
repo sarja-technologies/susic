@@ -11,6 +11,7 @@ use susic_core::{PlayQueue, RepeatMode, Track};
 use susic_library::Library;
 
 pub type Emitter = Arc<dyn Fn(&str, Value) + Send + Sync>;
+pub type SessionHook = Box<dyn Fn(&Track, bool) + Send>;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct PlayerState {
@@ -43,7 +44,7 @@ pub struct Controller {
     last_save: AtomicI64,
     /// Position to seek to when the restored track is first played.
     pending_restore: Mutex<Option<i64>>,
-    pub media_session: Mutex<Option<Box<dyn Fn(&Track, bool) + Send>>>,
+    pub media_session: Mutex<Option<SessionHook>>,
 }
 
 impl Controller {
@@ -58,7 +59,10 @@ impl Controller {
         let c = Arc::new(Self {
             lib: Mutex::new(lib),
             queue: Mutex::new(PlayQueue::new()),
-            state: Mutex::new(PlayerState { volume: 1.0, ..Default::default() }),
+            state: Mutex::new(PlayerState {
+                volume: 1.0,
+                ..Default::default()
+            }),
             data_dir,
             artwork_dir,
             music_dir,
@@ -86,7 +90,10 @@ impl Controller {
         (self.emit)(event, payload);
     }
 
-    pub fn with_lib<T>(&self, f: impl FnOnce(&Library) -> susic_library::Result<T>) -> Result<T, String> {
+    pub fn with_lib<T>(
+        &self,
+        f: impl FnOnce(&Library) -> susic_library::Result<T>,
+    ) -> Result<T, String> {
         let l = self.lib.lock().unwrap();
         f(&l).map_err(|e| e.to_string())
     }
@@ -95,7 +102,11 @@ impl Controller {
 
     pub fn on_engine_event(self: &Arc<Self>, ev: EngineEvent) {
         match ev {
-            EngineEvent::State { playing, position_ms, duration_ms } => {
+            EngineEvent::State {
+                playing,
+                position_ms,
+                duration_ms,
+            } => {
                 let snapshot = {
                     let mut s = self.state.lock().unwrap();
                     s.playing = playing;
@@ -151,11 +162,16 @@ impl Controller {
 
     fn maybe_count_play(&self, s: &PlayerState) {
         let Some(id) = s.track_id else { return };
-        let threshold = if s.duration_ms > 0 { (s.duration_ms / 2).min(30_000) } else { 30_000 };
-        if s.position_ms >= threshold && !self.counted.swap(true, Ordering::Relaxed) {
-            if self.with_lib(|l| l.mark_played(id)).is_ok() {
-                self.emit("library://changed", json!({ "reason": "played" }));
-            }
+        let threshold = if s.duration_ms > 0 {
+            (s.duration_ms / 2).min(30_000)
+        } else {
+            30_000
+        };
+        if s.position_ms >= threshold
+            && !self.counted.swap(true, Ordering::Relaxed)
+            && self.with_lib(|l| l.mark_played(id)).is_ok()
+        {
+            self.emit("library://changed", json!({ "reason": "played" }));
         }
     }
 
@@ -176,7 +192,10 @@ impl Controller {
             }
         };
         if !std::path::Path::new(&track.path).exists() {
-            self.on_engine_event(EngineEvent::Error(format!("File not found: {}", track.path)));
+            self.on_engine_event(EngineEvent::Error(format!(
+                "File not found: {}",
+                track.path
+            )));
             self.emit("queue://changed", json!({}));
             return;
         }
@@ -218,7 +237,8 @@ impl Controller {
             q.set(ids, start);
         }
         *self.pending_restore.lock().unwrap() = None;
-        if let Some(id) = self.queue.lock().unwrap().current_id() {
+        let current = self.queue.lock().unwrap().current_id();
+        if let Some(id) = current {
             self.start_track(id, 0, true);
         }
     }
@@ -227,14 +247,16 @@ impl Controller {
         let restore = self.pending_restore.lock().unwrap().take();
         let loaded = self.state.lock().unwrap().position_ms > 0 || restore.is_none();
         if let Some(pos) = restore {
-            if let Some(id) = self.queue.lock().unwrap().current_id() {
+            let current = self.queue.lock().unwrap().current_id();
+            if let Some(id) = current {
                 self.start_track(id, pos, true);
                 return;
             }
         }
         let has_track = self.state.lock().unwrap().track_id.is_some();
         if !has_track {
-            if let Some(id) = self.queue.lock().unwrap().current_id() {
+            let current = self.queue.lock().unwrap().current_id();
+            if let Some(id) = current {
                 self.start_track(id, 0, true);
             }
             return;
@@ -300,7 +322,8 @@ impl Controller {
         // A restored-but-not-yet-loaded track must be loaded at the seek target.
         let restore = self.pending_restore.lock().unwrap().take();
         if restore.is_some() {
-            if let Some(id) = self.queue.lock().unwrap().current_id() {
+            let current = self.queue.lock().unwrap().current_id();
+            if let Some(id) = current {
                 self.start_track(id, ms.max(0), false);
                 return;
             }
@@ -361,7 +384,10 @@ impl Controller {
     // ---- persistence ------------------------------------------------------
 
     pub fn save_queue(&self) {
-        let saved = SavedQueue { queue: self.queue.lock().unwrap().clone(), position_ms: self.state.lock().unwrap().position_ms };
+        let saved = SavedQueue {
+            queue: self.queue.lock().unwrap().clone(),
+            position_ms: self.state.lock().unwrap().position_ms,
+        };
         if let Ok(json) = serde_json::to_string(&saved) {
             let _ = self.with_lib(|l| l.set_setting("queue_state", &json));
         }
@@ -375,8 +401,12 @@ impl Controller {
                 self.engine().set_volume(f);
             }
         }
-        let Ok(Some(json)) = self.with_lib(|l| l.get_setting("queue_state")) else { return };
-        let Ok(saved) = serde_json::from_str::<SavedQueue>(&json) else { return };
+        let Ok(Some(json)) = self.with_lib(|l| l.get_setting("queue_state")) else {
+            return;
+        };
+        let Ok(saved) = serde_json::from_str::<SavedQueue>(&json) else {
+            return;
+        };
         // Drop ids that no longer exist.
         let ids = saved.queue.items.clone();
         let existing: Vec<i64> = self
@@ -386,8 +416,13 @@ impl Controller {
         if existing.is_empty() {
             return;
         }
-        let cur_id = saved.queue.current.and_then(|i| saved.queue.items.get(i).copied());
-        let start = cur_id.and_then(|c| existing.iter().position(|&x| x == c)).unwrap_or(0);
+        let cur_id = saved
+            .queue
+            .current
+            .and_then(|i| saved.queue.items.get(i).copied());
+        let start = cur_id
+            .and_then(|c| existing.iter().position(|&x| x == c))
+            .unwrap_or(0);
         {
             let mut q = self.queue.lock().unwrap();
             q.shuffle = saved.queue.shuffle;

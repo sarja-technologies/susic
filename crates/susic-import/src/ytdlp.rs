@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 pub fn which(bin: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).map(|d| d.join(bin)).find(|p| p.is_file())
+    std::env::split_paths(&path)
+        .map(|d| d.join(bin))
+        .find(|p| p.is_file())
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -69,7 +71,10 @@ pub fn build_args(url: &str, o: &Options) -> Vec<String> {
         "--print".into(),
         "after_move:SUSIC_FILE:%(filepath)s".into(),
         "-o".into(),
-        o.dest_dir.join("%(artist,uploader)s - %(title)s.%(ext)s").to_string_lossy().into_owned(),
+        o.dest_dir
+            .join("%(artist,uploader)s - %(title)s.%(ext)s")
+            .to_string_lossy()
+            .into_owned(),
     ];
     if o.format != "best" {
         a.push("--audio-format".into());
@@ -91,7 +96,8 @@ pub fn run(
     on_event: &mut dyn FnMut(Event),
 ) -> Result<Vec<PathBuf>, String> {
     validate_url(url)?;
-    let bin = which("yt-dlp").ok_or("yt-dlp was not found on PATH. Install it to enable URL import.")?;
+    let bin =
+        which("yt-dlp").ok_or("yt-dlp was not found on PATH. Install it to enable URL import.")?;
     if which("ffmpeg").is_none() {
         return Err("FFmpeg was not found on PATH. It is required to extract audio.".into());
     }
@@ -134,13 +140,18 @@ pub fn run(
         return Err("cancelled".into());
     }
     if !status.success() {
-        return Err(if err.is_empty() { format!("yt-dlp exited with {status}") } else { err });
+        return Err(if err.is_empty() {
+            format!("yt-dlp exited with {status}")
+        } else {
+            err
+        });
     }
     Ok(files)
 }
 
 pub fn dest_or_default(p: Option<&Path>, fallback: &Path) -> PathBuf {
-    p.map(Path::to_path_buf).unwrap_or_else(|| fallback.to_path_buf())
+    p.map(Path::to_path_buf)
+        .unwrap_or_else(|| fallback.to_path_buf())
 }
 
 #[cfg(test)]
@@ -149,7 +160,10 @@ mod tests {
 
     #[test]
     fn progress_parse() {
-        assert_eq!(parse_progress("[download]  42.5% of 3.00MiB at 1MiB/s"), Some(0.425));
+        assert_eq!(
+            parse_progress("[download]  42.5% of 3.00MiB at 1MiB/s"),
+            Some(0.425)
+        );
         assert_eq!(parse_progress("[info] x"), None);
     }
 
