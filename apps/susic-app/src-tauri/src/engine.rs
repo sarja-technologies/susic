@@ -394,3 +394,92 @@ pub mod android {
         }
     }
 }
+
+#[cfg(all(test, not(target_os = "android")))]
+mod tests {
+    use super::desktop::DesktopEngine;
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    fn write_wav(path: &std::path::Path, secs: f32) {
+        let rate = 8000u32;
+        let n = (rate as f32 * secs) as u32;
+        let mut d = Vec::new();
+        d.extend(b"RIFF");
+        d.extend((36 + n * 2).to_le_bytes());
+        d.extend(b"WAVEfmt ");
+        d.extend(16u32.to_le_bytes());
+        d.extend(1u16.to_le_bytes());
+        d.extend(1u16.to_le_bytes());
+        d.extend(rate.to_le_bytes());
+        d.extend((rate * 2).to_le_bytes());
+        d.extend(2u16.to_le_bytes());
+        d.extend(16u16.to_le_bytes());
+        d.extend(b"data");
+        d.extend((n * 2).to_le_bytes());
+        for i in 0..n {
+            let v = (((i as f32) * 0.1).sin() * 6000.0) as i16;
+            d.extend(v.to_le_bytes());
+        }
+        std::fs::write(path, d).unwrap();
+    }
+
+    /// Requires a working audio output device, so it is opt-in:
+    /// `cargo test -p susic-app -- --ignored desktop_engine`.
+    #[test]
+    #[ignore]
+    fn desktop_engine_plays_seeks_pauses_and_ends() {
+        let dir = std::env::temp_dir().join(format!("susic-eng-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("t.wav");
+        write_wav(&wav, 3.0);
+        let events = Arc::new(Mutex::new(Vec::<EngineEvent>::new()));
+        let ev = events.clone();
+        let eng = DesktopEngine::new(Arc::new(move |e| ev.lock().unwrap().push(e)));
+        let media = MediaInfo {
+            path: wav.to_string_lossy().into(),
+            duration_ms: 3000,
+            ..Default::default()
+        };
+        eng.load(media, 0, true);
+        let wait = |cond: &dyn Fn(&[EngineEvent]) -> bool, secs: u64| {
+            let t = Instant::now();
+            while t.elapsed() < Duration::from_secs(secs) {
+                if cond(&events.lock().unwrap()) {
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+        let pos = |e: &EngineEvent| match e {
+            EngineEvent::State {
+                position_ms,
+                playing: true,
+                ..
+            } => Some(*position_ms),
+            _ => None,
+        };
+        assert!(
+            wait(&|e| e.iter().filter_map(pos).any(|p| p > 400), 5),
+            "position should advance: {:?}",
+            events.lock().unwrap().last()
+        );
+        eng.pause();
+        assert!(
+            wait(
+                &|e| matches!(e.last(), Some(EngineEvent::State { playing: false, .. })),
+                3
+            ),
+            "pause"
+        );
+        eng.seek(2500);
+        eng.play();
+        assert!(
+            wait(&|e| e.iter().any(|x| matches!(x, EngineEvent::Ended)), 6),
+            "should end"
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
+}

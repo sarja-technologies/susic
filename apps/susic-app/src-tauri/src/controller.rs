@@ -454,3 +454,91 @@ impl Controller {
         self.save_queue();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Engine, EngineEvent, MediaInfo};
+    use std::sync::atomic::AtomicUsize;
+    use susic_core::NewTrack;
+
+    #[derive(Default)]
+    struct Fake {
+        loads: AtomicUsize,
+    }
+    impl Engine for Arc<Fake> {
+        fn load(&self, _: MediaInfo, _: i64, _: bool) {
+            self.loads.fetch_add(1, Ordering::SeqCst);
+        }
+        fn play(&self) {}
+        fn pause(&self) {}
+        fn seek(&self, _: i64) {}
+        fn set_volume(&self, _: f32) {}
+        fn stop(&self) {}
+    }
+
+    fn setup() -> (Arc<Controller>, Arc<Fake>, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "susic-ctl-{}-{}",
+            std::process::id(),
+            susic_library::now()
+        ));
+        let c = Controller::new(dir.clone(), Arc::new(|_, _| {})).unwrap();
+        let fake = Arc::new(Fake::default());
+        c.set_engine(Box::new(fake.clone()));
+        for i in 0..3 {
+            let f = dir.join(format!("{i}.mp3"));
+            std::fs::write(&f, b"x").unwrap();
+            c.with_lib(|l| {
+                l.upsert_track(&NewTrack {
+                    title: format!("T{i}"),
+                    path: f.to_string_lossy().into(),
+                    hash: format!("h{i}"),
+                    duration_ms: 60_000,
+                    ..Default::default()
+                })
+            })
+            .unwrap();
+        }
+        (c, fake, dir)
+    }
+
+    /// Regression: starting a track used to self-deadlock on the queue mutex.
+    #[test]
+    fn play_next_ended_and_restore_do_not_deadlock() {
+        let (c, fake, dir) = setup();
+        let ids: Vec<i64> = c
+            .with_lib(|l| l.list_tracks(&Default::default()))
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let c2 = c.clone();
+        std::thread::spawn(move || {
+            c2.play_tracks(ids, 0, None);
+            c2.on_engine_event(EngineEvent::State {
+                playing: true,
+                position_ms: 40_000,
+                duration_ms: 60_000,
+            });
+            c2.next();
+            c2.on_engine_event(EngineEvent::Ended);
+            c2.prev();
+            c2.seek(1000);
+            c2.pause();
+            c2.play();
+            c2.restore();
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .expect("controller deadlocked");
+        assert!(fake.loads.load(Ordering::SeqCst) >= 3);
+        let t = c.with_lib(|l| l.get_track(1)).unwrap().unwrap();
+        assert_eq!(
+            t.play_count, 1,
+            "play counted once after passing the threshold"
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
+}
