@@ -1,0 +1,12 @@
+[package]
+name = "susic-library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite.workspace = true
+susic-core = { path = "../susic-core" }

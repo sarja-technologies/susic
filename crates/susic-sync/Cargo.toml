@@ -1,0 +1,14 @@
+[package]
+name = "susic-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+snow = "0.9"
+rand = "0.8"
+blake3 = "1"
+susic-core = { path = "../susic-core" }

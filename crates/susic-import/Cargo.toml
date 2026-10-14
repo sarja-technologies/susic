@@ -1,0 +1,16 @@
+[package]
+name = "susic-import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+lofty = "0.22"
+walkdir = "2"
+blake3 = "1"
+susic-core = { path = "../susic-core" }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+ureq = { version = "2", features = ["json"] }

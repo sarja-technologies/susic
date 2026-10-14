@@ -1,0 +1,32 @@
+target/
+node_modules/
+dist/
+.svelte-kit/
+*.log
+.DS_Store
+# Android / Gradle
+**/gen/android/.gradle/
+**/gen/android/build/
+**/gen/android/app/build/
+**/gen/android/local.properties
+**/gen/android/app/src/main/jniLibs/
+**/gen/android/app/tauri.settings.gradle
+**/gen/android/buildSrc/.gradle/
+*.apk
+*.aab
+*.keystore
+*.jks
+keystore.properties
+# Packaging output
+*.deb
+*.AppImage
+*.rpm
+# Local media / secrets
+*.mp3
+*.flac
+*.m4a
+*.opus
+*.ogg
+.env
+.env.*
+!crates/**/fixtures/**
