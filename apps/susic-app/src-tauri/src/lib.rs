@@ -5,10 +5,12 @@ mod importer;
 #[cfg(not(target_os = "android"))]
 mod mpris;
 mod net_commands;
+mod server;
 
 use commands::*;
 use controller::Controller;
 use net_commands::*;
+use server::*;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -52,6 +54,7 @@ pub fn run() {
             #[cfg(not(target_os = "android"))]
             mpris::attach(&ctl, sink.clone());
             ctl.restore();
+            server::init(&ctl);
             // Pick up new files in watched folders; unchanged files are skipped.
             let mut watched = commands::watched_folders(&ctl);
             watched.push(ctl.music_dir.to_string_lossy().into_owned());
@@ -135,6 +138,18 @@ pub fn run() {
             sync_disconnect,
             sync_receive,
             youtube_search,
+            server_info,
+            server_connect,
+            server_disconnect,
+            server_sync,
+            server_rescan,
+            server_status,
+            server_devices,
+            server_revoke_device,
+            download_tracks,
+            remove_downloads,
+            cache_status,
+            clear_downloads,
             pick_audio,
         ])
         .run(tauri::generate_context!())

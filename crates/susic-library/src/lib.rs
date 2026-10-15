@@ -467,6 +467,19 @@ impl Library {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
+    /// Server-sourced rows with their current artwork path (for lazy fetch).
+    pub fn server_art_candidates(&self) -> Result<Vec<(i64, i64, Option<String>)>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, remote_id, artwork FROM tracks WHERE source='server' AND remote_id IS NOT NULL",
+        )?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+    pub fn set_artwork(&self, id: i64, path: &str) -> Result<()> {
+        self.conn.execute("UPDATE tracks SET artwork=?2 WHERE id=?1", params![id, path])?;
+        Ok(())
+    }
+
     pub fn track_by_remote(&self, remote_id: i64) -> Result<Option<i64>> {
         Ok(self
             .conn

@@ -96,6 +96,14 @@ pub fn home(c: Ctl) -> R<Home> {
 #[tauri::command]
 pub fn set_favourite(c: Ctl, id: i64, favourite: bool) -> R<()> {
     c.with_lib(|l| l.set_favourite(id, favourite))?;
+    // Keep the server in step (best effort; the monitor reconciles later).
+    if let Ok(Some(t)) = c.with_lib(|l| l.get_track(id)) {
+        if let (Some(rid), Some(srv)) = (t.remote_id, c.server.lock().unwrap().clone()) {
+            std::thread::spawn(move || {
+                let _ = srv.set_favourite(rid, favourite);
+            });
+        }
+    }
     c.emit(
         "library://changed",
         json!({ "reason": "favourite", "id": id, "favourite": favourite }),

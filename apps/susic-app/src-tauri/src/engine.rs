@@ -39,6 +39,8 @@ pub struct MediaInfo {
     pub album: String,
     pub artwork: Option<String>,
     pub duration_ms: i64,
+    /// File extension hint (needed when `path` is a stream URL).
+    pub format: String,
 }
 
 pub type EventSink = Arc<dyn Fn(EngineEvent) + Send + Sync>;
@@ -105,19 +107,32 @@ pub mod desktop {
         }
     }
 
-    fn open(path: &str) -> Result<Decoder<BufReader<std::fs::File>>, String> {
-        let f = std::fs::File::open(path).map_err(|e| format!("Cannot open file: {e}"))?;
-        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
-        let mut b = Decoder::builder()
-            .with_data(BufReader::new(f))
-            .with_seekable(true);
+    trait ReadSeek: std::io::Read + std::io::Seek + Send + Sync {}
+    impl<T: std::io::Read + std::io::Seek + Send + Sync> ReadSeek for T {}
+
+    fn open(media: &MediaInfo) -> Result<Decoder<Box<dyn ReadSeek>>, String> {
+        let path = media.path.as_str();
+        let (reader, len, ext): (Box<dyn ReadSeek>, u64, Option<String>) =
+            if path.starts_with("http://") || path.starts_with("https://") {
+                let r = susic_client::HttpRangeReader::open(path)
+                    .map_err(|e| format!("Cannot reach server: {e}"))?;
+                let len = r.len();
+                let ext = (!media.format.is_empty()).then(|| media.format.clone());
+                (Box::new(r), len, ext)
+            } else {
+                let f = std::fs::File::open(path).map_err(|e| format!("Cannot open file: {e}"))?;
+                let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+                let ext = std::path::Path::new(path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(String::from);
+                (Box::new(BufReader::new(f)), len, ext)
+            };
+        let mut b = Decoder::builder().with_data(reader).with_seekable(true);
         if len > 0 {
             b = b.with_byte_len(len);
         }
-        if let Some(ext) = std::path::Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-        {
+        if let Some(ext) = ext.as_deref() {
             b = b.with_hint(ext);
         }
         b.build()
@@ -157,7 +172,7 @@ pub mod desktop {
                                 }
                             }
                         }
-                        match open(&media.path) {
+                        match open(&media) {
                             Ok(dec) => {
                                 let p = Player::connect_new(device.as_ref().unwrap().mixer());
                                 p.set_volume(volume);
