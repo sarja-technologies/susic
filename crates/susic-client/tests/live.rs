@@ -39,7 +39,11 @@ fn start(state: Arc<AppState>, bind: &str) -> (Srv, std::net::SocketAddr) {
     let st = state.clone();
     let bind = bind.to_string();
     let th = std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
         rt.block_on(async move {
             let l = loop {
                 match tokio::net::TcpListener::bind(&bind).await {
@@ -48,26 +52,56 @@ fn start(state: Arc<AppState>, bind: &str) -> (Srv, std::net::SocketAddr) {
                 }
             };
             tx.send(l.local_addr().unwrap()).unwrap();
-            susic_server::serve(st, l, async { let _ = stop_rx.await; }).await.unwrap();
+            susic_server::serve(st, l, async {
+                let _ = stop_rx.await;
+            })
+            .await
+            .unwrap();
         });
     });
     let addr = rx.recv().unwrap();
-    (Srv { state, stop: Some(stop), th: Some(th) }, addr)
+    (
+        Srv {
+            state,
+            stop: Some(stop),
+            th: Some(th),
+        },
+        addr,
+    )
 }
 impl Srv {
     fn stop(&mut self) {
-        if let Some(s) = self.stop.take() { let _ = s.send(()); }
-        if let Some(t) = self.th.take() { let _ = t.join(); }
+        if let Some(s) = self.stop.take() {
+            let _ = s.send(());
+        }
+        if let Some(t) = self.th.take() {
+            let _ = t.join();
+        }
     }
 }
 
-fn setup(name: &str) -> (Srv, std::net::SocketAddr, Server, i64, Vec<u8>, std::path::PathBuf) {
+fn setup(
+    name: &str,
+) -> (
+    Srv,
+    std::net::SocketAddr,
+    Server,
+    i64,
+    Vec<u8>,
+    std::path::PathBuf,
+) {
     let root = std::env::temp_dir().join(format!("susic-cli-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let music = root.join("music");
     std::fs::create_dir_all(&music).unwrap();
     write_wav(&music.join("big.wav"), 100.0); // ~1.6 MB: several 512 KiB chunks
-    let cfg = Config { bind: "127.0.0.1:0".into(), music_dir: music.clone(), data_dir: root.join("data"), scan_interval_secs: 0, server_name: "T".into() };
+    let cfg = Config {
+        bind: "127.0.0.1:0".into(),
+        music_dir: music.clone(),
+        data_dir: root.join("data"),
+        scan_interval_secs: 0,
+        server_name: "T".into(),
+    };
     let state = susic_server::open_state(cfg).unwrap();
     state.run_scan().unwrap().unwrap();
     let code = susic_server::issue_pair_code(&state, Duration::from_secs(60)).unwrap();
@@ -103,7 +137,9 @@ fn reader_seeks_and_matches_file_and_download_resumes() {
     let err = server.download(id, &dest, &mut |done, _| done < 100_000);
     assert!(matches!(err, Err(susic_client::Error::Cancelled)));
     assert!(!dest.exists());
-    let part_len = std::fs::metadata(root.join("dl/big.wav.part")).unwrap().len();
+    let part_len = std::fs::metadata(root.join("dl/big.wav.part"))
+        .unwrap()
+        .len();
     assert!(part_len > 0 && part_len < bytes.len() as u64);
     server.download(id, &dest, &mut |_, _| true).unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), bytes);

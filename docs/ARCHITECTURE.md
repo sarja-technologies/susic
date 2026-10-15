@@ -61,3 +61,22 @@ The Kotlin plugin owns `ExoPlayer` in a process-wide `PlayerHub`, exposes it
 through a `MediaSessionService` (notification, lock screen, Bluetooth, audio
 focus, becoming-noisy) and copies picked files into app-private storage. Rust
 learns about `ended`/`next`/`prev`/`error` events by polling `state`.
+
+## Server integration (0.2)
+
+```
+crates/susic-server   axum + SQLite: scan, pair, library delta, Range streaming, playlists
+crates/susic-client   ureq client, resumable download, HttpRangeReader (Read+Seek, read-ahead, retry)
+apps/susic-app/src-tauri/src/server.rs   pairing, sync, downloads, cache limit, online monitor
+```
+
+* **One row per song.** `tracks.remote_id` links a library row to a server track. Matching a server
+  track to a local row is by content fingerprint, so owning a song locally never duplicates it.
+  `availability` (`local`, `local+server`, `server`, `downloaded`) is derived, never stored.
+* **Playback resolution** (`Controller::resolve_playable`): local file → offline copy → stream URL.
+  The desktop engine decodes `HttpRangeReader` directly (seeking via Range requests); Android passes
+  the URL to Media3.
+* **Sync**: the server keeps a monotonically increasing revision; clients ask for `since=<rev>` and
+  receive changed tracks and removed ids. A 15 s monitor pings `/health`, syncs on reconnect and about
+  once a minute.
+* **Safety**: the scanner never removes tracks when the music directory looks unmounted/empty.

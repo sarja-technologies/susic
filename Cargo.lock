@@ -3761,9 +3761,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -4298,7 +4298,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "susic-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "qrcode",
@@ -4324,7 +4324,7 @@ dependencies = [
 
 [[package]]
 name = "susic-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4336,7 +4336,7 @@ dependencies = [
 
 [[package]]
 name = "susic-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rand",
  "serde",
@@ -4346,7 +4346,7 @@ dependencies = [
 
 [[package]]
 name = "susic-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "image",
@@ -4361,7 +4361,7 @@ dependencies = [
 
 [[package]]
 name = "susic-library"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -4372,7 +4372,7 @@ dependencies = [
 
 [[package]]
 name = "susic-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "blake3",
@@ -4393,7 +4393,7 @@ dependencies = [
 
 [[package]]
 name = "susic-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "rand",
@@ -4928,7 +4928,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-susic-player"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

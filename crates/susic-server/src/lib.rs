@@ -39,7 +39,8 @@ pub fn new_pair_code() -> String {
 }
 
 pub fn open_state(cfg: Config) -> Result<Arc<AppState>, String> {
-    std::fs::create_dir_all(&cfg.data_dir).map_err(|e| format!("cannot create data dir {}: {e}", cfg.data_dir.display()))?;
+    std::fs::create_dir_all(&cfg.data_dir)
+        .map_err(|e| format!("cannot create data dir {}: {e}", cfg.data_dir.display()))?;
     let db = db::Db::open(&cfg.db_path()).map_err(|e| e.to_string())?;
     Ok(AppState::new(db, cfg))
 }
@@ -76,7 +77,9 @@ pub async fn serve(
     let res = axum::serve(listener, router(state.clone()))
         .with_graceful_shutdown(shutdown)
         .await;
-    state.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    state
+        .cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     scanner.abort();
     res
 }

@@ -217,25 +217,41 @@ fn server_tracks_link_to_local_copies_instead_of_duplicating() {
     let l = lib();
     // Same recording as local "Alpha" (hash h0): linked, no new row.
     let before = l.stats().unwrap().tracks;
-    let id = l.upsert_remote(&nt("Alpha", "Ann", "One", "", "h0"), 7).unwrap();
+    let id = l
+        .upsert_remote(&nt("Alpha", "Ann", "One", "", "h0"), 7)
+        .unwrap();
     assert_eq!(l.stats().unwrap().tracks, before);
     let t = l.get_track(id).unwrap().unwrap();
     assert_eq!(t.availability, "local+server");
     assert_eq!(t.remote_id, Some(7));
     // Unknown recording becomes a server-only row.
-    let sid = l.upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8).unwrap();
+    let sid = l
+        .upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8)
+        .unwrap();
     let s = l.get_track(sid).unwrap().unwrap();
-    assert_eq!((s.availability.as_str(), s.source.as_str()), ("server", "server"));
+    assert_eq!(
+        (s.availability.as_str(), s.source.as_str()),
+        ("server", "server")
+    );
     // Re-sync is idempotent.
-    assert_eq!(l.upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8).unwrap(), sid);
+    assert_eq!(
+        l.upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8)
+            .unwrap(),
+        sid
+    );
     // Server-only rows are never treated as missing local files.
     assert!(l.track_paths().unwrap().iter().all(|(i, _)| *i != sid));
     // Favourite + offline copy survive; availability reflects the cache.
     l.set_favourite(sid, true).unwrap();
     l.set_cache(sid, Some("/cache/8.flac"), true).unwrap();
-    assert_eq!(l.get_track(sid).unwrap().unwrap().availability, "downloaded");
+    assert_eq!(
+        l.get_track(sid).unwrap().unwrap().availability,
+        "downloaded"
+    );
     // Importing the same recording locally adopts the local file into this row.
-    let r = l.upsert_track(&nt("Delta", "Cy", "Three", "/m/Delta.mp3", "h9")).unwrap();
+    let r = l
+        .upsert_track(&nt("Delta", "Cy", "Three", "/m/Delta.mp3", "h9"))
+        .unwrap();
     assert_eq!(r, Upsert::Updated(sid));
     let t = l.get_track(sid).unwrap().unwrap();
     assert!(t.favourite);
@@ -252,7 +268,10 @@ fn removed_remote_tracks_keep_offline_copies() {
     assert_eq!(l.remote_removed(&[1, 2]).unwrap(), 1);
     assert!(l.get_track(a).unwrap().is_none());
     let kept = l.get_track(b).unwrap().unwrap();
-    assert_eq!((kept.remote_id, kept.availability.as_str()), (None, "downloaded"));
+    assert_eq!(
+        (kept.remote_id, kept.availability.as_str()),
+        (None, "downloaded")
+    );
 }
 
 #[test]
@@ -286,7 +305,10 @@ fn bench_large_library() {
     println!("insert 50k: {:?}", t0.elapsed());
     let t = std::time::Instant::now();
     let r = l
-        .list_tracks(&TrackQuery { search: Some("number 4999".into()), ..Default::default() })
+        .list_tracks(&TrackQuery {
+            search: Some("number 4999".into()),
+            ..Default::default()
+        })
         .unwrap();
     println!("search ({} hits): {:?}", r.len(), t.elapsed());
     let t = std::time::Instant::now();

@@ -2,38 +2,53 @@
 
 # Susic
 
-A beautiful, offline-first, cross-platform music library and player for Linux desktop and Android.
-No account, no cloud, no telemetry. Your music stays on your device.
+A fast, private music player for Ubuntu and Android that treats your own music as first-class:
+play local files, and optionally stream the library on your home server from anywhere through Tailscale.
+No account, no telemetry. Your music stays yours.
 
-> **Status: 0.1.0 (first release).** See [Known limitations](docs/KNOWN_LIMITATIONS.md) for exactly what is and isn't implemented.
+> **Status: 0.2.0 (pre-release).** See [Known limitations](docs/KNOWN_LIMITATIONS.md) and the
+> verification tables in [Android](docs/ANDROID.md) and [Server](docs/SERVER.md) for exactly what has
+> and has not been tested.
 
-## Features
+| Home | Unified library | Search |
+|---|---|---|
+| ![Home](docs/screenshots/desktop-home.png) | ![Library](docs/screenshots/desktop-library-unified.png) | ![Search](docs/screenshots/desktop-search.png) |
 
-- Local library (SQLite): songs, albums, artists, favourites, play history, automatic playlists
-  (Liked Songs, Recently Added, Recently Played, Most Played) and your own playlists
-- MP3, M4A/AAC, FLAC, WAV, Ogg Vorbis (Opus: Android; see limitations) with embedded tags, artwork and lyrics
-- Persistent queue, shuffle without early repeats, repeat track/queue, play next, drag-and-drop reordering
-- Synced (`.lrc`/embedded) and plain lyrics, manual timing offset, optional LRCLIB lookup
-- Desktop: native playback, Linux media keys / MPRIS, drag-and-drop import, optional yt-dlp URL import
-- Android: Media3/ExoPlayer background playback, notification + lock-screen + Bluetooth controls, audio focus
-- Encrypted LAN transfer from Susic Desktop to Susic Android with a one-time pairing code
-- Optional YouTube Data API search (your own key; results open in YouTube)
+| Server settings | Downloads | Android |
+|---|---|---|
+| ![Server](docs/screenshots/desktop-server-settings.png) | ![Downloads](docs/screenshots/desktop-downloads.png) | ![Android](docs/screenshots/android-library.png) |
+
+## What it does
+
+* **Local-first library** (SQLite): MP3, M4A/AAC, FLAC, WAV, Ogg Vorbis (Opus on Android), embedded tags,
+  artwork and lyrics (embedded, `.lrc`, optional LRCLIB), albums/artists/playlists, favourites, play
+  history, persistent queue and playback position, shuffle/repeat, media keys and MPRIS.
+* **One library, two sources.** Songs stored on the device and songs on your Susic server appear in the
+  same lists, with an indicator for *on this device*, *on your server*, *downloaded*, and
+  *unavailable (server offline)*. A song you own locally is never streamed.
+* **Optional self-hosted server** ([docs/SERVER.md](docs/SERVER.md)): a ~9 MB Rust binary for an old
+  Ubuntu box. Indexes a directory, detects new/moved/deleted files, streams with seek, syncs favourites
+  and playlists, runs under systemd.
+* **Listen anywhere** over [Tailscale](docs/TAILSCALE.md) — never exposed to the public internet.
+  Buffered streaming that reconnects and resumes, offline downloads with a size limit.
+* **Unified search** across your device, your server and — as clearly-labelled *discovery only* results —
+  YouTube's catalogue via the official API ([docs/YOUTUBE.md](docs/YOUTUBE.md)).
+* **Home**: quick-launch speed dial (pin albums/artists/playlists), continue listening, recently played,
+  frequently played, favourites.
+* **Android**: Media3 background playback, notification, lock-screen/Bluetooth controls.
+* Light theme by default (white, warm off-white, orange); optional dark theme.
 
 ## Install
 
 **Ubuntu / Debian**
 
 ```bash
-sudo apt install ./Susic_0.1.0_amd64.deb      # or run the .AppImage
+sudo apt install ./Susic_0.2.0_amd64.deb      # or run the .AppImage
 ```
 
-**Android**
+**Android**: sideload the APK ([docs/ANDROID.md](docs/ANDROID.md)).
 
-1. Download `app-universal-debug.apk` (CI artifact or your own build).
-2. Allow "Install unknown apps" for your browser/file manager and open the APK.
-   Or with a computer: `adb install -r app-universal-debug.apk`.
-
-The APK is a **debug-signed** build. No release signing key is included.
+**Server** (optional): [docs/SERVER.md](docs/SERVER.md).
 
 ## Build from source
 
@@ -41,49 +56,47 @@ Requirements: Rust (stable), Node 20+, and on Ubuntu
 `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libssl-dev libdbus-1-dev patchelf`.
 
 ```bash
-cd apps/susic-app
-npm ci
-npm run tauri dev                       # run desktop in dev mode
-npx tauri build --bundles deb,appimage  # → target/release/bundle/
+cd apps/susic-app && npm ci
+npm run tauri dev                         # desktop dev mode
+npx tauri build --bundles deb,appimage    # → target/release/bundle/
+cargo build --release -p susic-server     # → target/release/susic-server
 ```
 
-Android (JDK 21, Android SDK platform 36 + build-tools 36, NDK 26.3, Rust Android targets):
+## Run locally
 
 ```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-export ANDROID_HOME=$HOME/Android/Sdk NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264
-npx tauri android build --debug --apk                # all ABIs
-npx tauri android build --debug --apk --target x86_64  # emulator only
-# → apps/susic-app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/
+# server (optional) — point it at any folder of music
+SUSIC_MUSIC_DIR=~/Music SUSIC_DATA_DIR=/tmp/susic-srv SUSIC_BIND=127.0.0.1:8484 \
+  cargo run -p susic-server -- serve
+cargo run -p susic-server -- pair          # in another shell (same env): prints a pairing code
+# app
+cd apps/susic-app && npm run tauri dev     # Settings → Susic server → http://127.0.0.1:8484 + code
 ```
 
-Tests and checks:
+## Tests
 
 ```bash
 cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo test -p susic-app -- --ignored desktop_engine   # needs an audio device
+cargo test --workspace                     # includes real-socket server/client integration tests
+cargo test -p susic-app -- --ignored desktop_engine    # needs an audio device
 cd apps/susic-app && npm run check && npm test
-scripts/make-fixtures.sh ./fixtures                   # synthetic test audio (ffmpeg)
+scripts/make-fixtures.sh ./fixtures        # synthetic test audio (ffmpeg)
 ```
 
-## Using Susic
+## Layout
 
-1. Launch Susic. On first run choose **Add music files** or **Add a folder** (or drag files onto the window).
-   Watched folders are re-scanned on launch; unchanged files are skipped.
-2. Double-click a song (tap on Android) to play. Use the bottom bar for transport, queue and lyrics.
-3. **Transfer to phone:** on desktop open *Transfer music → Start sharing*; on Android open
-   *More → Transfer → Connect to Desktop* and enter the address and pairing code.
-4. Optional tools: install `yt-dlp` and `ffmpeg` to enable URL import on desktop.
+`crates/susic-core` (queue, models, lyrics) · `susic-library` (SQLite) · `susic-import` (tags, scan) ·
+`susic-server` (server) · `susic-client` (server client, range reader) · `susic-sync` (device transfer) ·
+`tauri-plugin-susic-player` (Android Media3) · `apps/susic-app` (Tauri + Svelte). See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Platform support & testing status](docs/PLATFORMS.md)
-- [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Privacy & data handling](docs/PRIVACY.md)
-- [Third-party licences](THIRD_PARTY.md) · [Changelog](CHANGELOG.md)
+[Server](docs/SERVER.md) · [Tailscale](docs/TAILSCALE.md) · [Security](docs/SECURITY.md) ·
+[Android](docs/ANDROID.md) · [YouTube](docs/YOUTUBE.md) · [Privacy](docs/PRIVACY.md) ·
+[Releasing & publication checklist](docs/RELEASING.md) · [Contributing](CONTRIBUTING.md) ·
+[Third-party notices](THIRD_PARTY.md)
 
 ## Licence
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+GPL-3.0-or-later — see [LICENSE](LICENSE) and [docs/RELEASING.md](docs/RELEASING.md#licence).

@@ -63,11 +63,19 @@ fn downloads_dir(c: &Controller) -> PathBuf {
 }
 
 fn server_of(c: &Controller) -> R<Server> {
-    c.server.lock().unwrap().clone().ok_or_else(|| "No Susic server is connected".to_string())
+    c.server
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "No Susic server is connected".to_string())
 }
 
 fn setting_i64(c: &Controller, key: &str, default: i64) -> i64 {
-    c.with_lib(|l| l.get_setting(key)).ok().flatten().and_then(|v| v.parse().ok()).unwrap_or(default)
+    c.with_lib(|l| l.get_setting(key))
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 // ---- startup / monitor -------------------------------------------------------
@@ -113,7 +121,7 @@ fn tick_due() -> bool {
     static N: OnceLock<Mutex<u32>> = OnceLock::new();
     let mut n = N.get_or_init(|| Mutex::new(0)).lock().unwrap();
     *n += 1;
-    *n % 4 == 0 // every ~minute
+    (*n).is_multiple_of(4) // every ~minute
 }
 
 // ---- sync --------------------------------------------------------------------
@@ -166,7 +174,12 @@ fn sync_library(c: &Arc<Controller>, srv: &Server) -> Result<(), ClientError> {
                 ..Default::default()
             };
             let id = db(l.upsert_remote(&nt, t.id))?;
-            let local_fav = l.get_track(id).ok().flatten().map(|x| x.favourite).unwrap_or(false);
+            let local_fav = l
+                .get_track(id)
+                .ok()
+                .flatten()
+                .map(|x| x.favourite)
+                .unwrap_or(false);
             if first_sync && local_fav && !t.favourite {
                 to_push_fav.push(t.id); // adopt local favourites on first link
             } else if local_fav != t.favourite {
@@ -183,10 +196,16 @@ fn sync_library(c: &Arc<Controller>, srv: &Server) -> Result<(), ClientError> {
 }
 
 fn fetch_artwork(c: &Arc<Controller>, srv: &Server) {
-    let cands = c.with_lib(|l| l.server_art_candidates()).unwrap_or_default();
+    let cands = c
+        .with_lib(|l| l.server_art_candidates())
+        .unwrap_or_default();
     let mut n = 0;
     for (id, rid, art) in cands {
-        if art.as_deref().map(|p| std::path::Path::new(p).exists()).unwrap_or(false) {
+        if art
+            .as_deref()
+            .map(|p| std::path::Path::new(p).exists())
+            .unwrap_or(false)
+        {
             continue;
         }
         let dest = c.artwork_dir.join(format!("srv-{rid}.jpg"));
@@ -208,8 +227,11 @@ fn fetch_artwork(c: &Arc<Controller>, srv: &Server) {
 fn new_uid() -> String {
     let mut b = [0u8; 12];
     // No rand dependency in the app crate: derive from time + address entropy.
-    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    let seed = t.as_nanos() ^ ((&b as *const _ as usize as u128) << 17) ^ std::process::id() as u128;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let seed =
+        t.as_nanos() ^ ((&b as *const _ as usize as u128) << 17) ^ std::process::id() as u128;
     for (i, x) in b.iter_mut().enumerate() {
         *x = ((seed >> ((i % 16) * 8)) as u8) ^ (i as u8).wrapping_mul(131);
     }
@@ -268,7 +290,8 @@ fn sync_playlists(c: &Arc<Controller>, srv: &Server) -> Result<(), ClientError> 
         }
     }
     // 3. Push local playlists that are new or newer.
-    let remote_map: std::collections::HashMap<_, _> = remote.iter().map(|r| (r.uid.clone(), r)).collect();
+    let remote_map: std::collections::HashMap<_, _> =
+        remote.iter().map(|r| (r.uid.clone(), r)).collect();
     let locals = db(l.playlists())?;
     for p in locals {
         let uid = db(l.playlist_remote_uid(p.id))?.filter(|u| !u.is_empty());
@@ -280,7 +303,10 @@ fn sync_playlists(c: &Arc<Controller>, srv: &Server) -> Result<(), ClientError> 
             continue;
         }
         let ids = db(l.playlist_track_ids(p.id))?;
-        let rids: Vec<i64> = db(l.get_tracks(&ids))?.into_iter().filter_map(|t| t.remote_id).collect();
+        let rids: Vec<i64> = db(l.get_tracks(&ids))?
+            .into_iter()
+            .filter_map(|t| t.remote_id)
+            .collect();
         let uid = uid.unwrap_or_else(new_uid);
         drop_guard_put(srv, &uid, &p.name, &rids, p.updated_at)?;
         db(l.set_playlist_remote_uid(p.id, &uid))?;
@@ -288,7 +314,13 @@ fn sync_playlists(c: &Arc<Controller>, srv: &Server) -> Result<(), ClientError> 
     Ok(())
 }
 
-fn drop_guard_put(srv: &Server, uid: &str, name: &str, rids: &[i64], at: i64) -> Result<(), ClientError> {
+fn drop_guard_put(
+    srv: &Server,
+    uid: &str,
+    name: &str,
+    rids: &[i64],
+    at: i64,
+) -> Result<(), ClientError> {
     srv.put_playlist(uid, name, rids, at).map(|_| ())
 }
 
@@ -308,7 +340,12 @@ fn cache_info(c: &Controller) -> CacheInfo {
         bytes: rows.iter().map(|r| r.2).sum(),
         tracks: rows.len(),
         max_mb: setting_i64(c, "cache.max_mb", 2048),
-        auto: c.with_lib(|l| l.get_setting("cache.auto")).ok().flatten().as_deref() == Some("true"),
+        auto: c
+            .with_lib(|l| l.get_setting("cache.auto"))
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some("true"),
     }
 }
 
@@ -349,15 +386,25 @@ pub fn download_one(c: &Arc<Controller>, id: i64, pinned: bool) -> R<()> {
     if !ensure_room(c, t.size_bytes) {
         return Err("Download limit reached — raise it in Settings or remove downloads".into());
     }
-    let ext = if t.format.is_empty() { "audio" } else { t.format.as_str() };
+    let ext = if t.format.is_empty() {
+        "audio"
+    } else {
+        t.format.as_str()
+    };
     let dest = downloads_dir(c).join(format!("{rid}.{ext}"));
     srv.download(rid, &dest, &mut |done, total| {
-        c.emit("download://progress", json!({ "id": id, "done": done, "total": total }));
+        c.emit(
+            "download://progress",
+            json!({ "id": id, "done": done, "total": total }),
+        );
         true
     })
     .map_err(|e| e.to_string())?;
     c.with_lib(|l| l.set_cache(id, Some(&dest.to_string_lossy()), pinned))?;
-    c.emit("library://changed", json!({ "reason": "download", "id": id }));
+    c.emit(
+        "library://changed",
+        json!({ "reason": "download", "id": id }),
+    );
     Ok(())
 }
 
@@ -388,7 +435,12 @@ pub struct ServerInfo {
 pub fn server_info(c: Ctl) -> ServerInfo {
     let creds = creds_name(&c);
     let tracks = c
-        .with_lib(|l| Ok(l.list_tracks(&susic_library::TrackQuery::default())?.iter().filter(|t| t.remote_id.is_some()).count() as i64))
+        .with_lib(|l| {
+            Ok(l.list_tracks(&susic_library::TrackQuery::default())?
+                .iter()
+                .filter(|t| t.remote_id.is_some())
+                .count() as i64)
+        })
         .unwrap_or(0);
     ServerInfo {
         configured: creds.is_some(),
@@ -410,9 +462,18 @@ pub struct ConnectReq {
 #[tauri::command]
 pub async fn server_connect(c: Ctl<'_>, req: ConnectReq) -> R<ServerInfo> {
     let ctl: Arc<Controller> = c.inner().clone();
-    let device = req.device_name.filter(|d| !d.trim().is_empty()).unwrap_or_else(|| {
-        std::env::var("HOSTNAME").unwrap_or_else(|_| if cfg!(target_os = "android") { "Android phone".into() } else { "Susic desktop".into() })
-    });
+    let device = req
+        .device_name
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| {
+            std::env::var("HOSTNAME").unwrap_or_else(|_| {
+                if cfg!(target_os = "android") {
+                    "Android phone".into()
+                } else {
+                    "Susic desktop".into()
+                }
+            })
+        });
     let base = susic_client::normalise_base(&req.url);
     let b2 = base.clone();
     let paired = tauri::async_runtime::spawn_blocking(move || {
@@ -426,7 +487,15 @@ pub async fn server_connect(c: Ctl<'_>, req: ConnectReq) -> R<ServerInfo> {
         e => e.to_string(),
     })?;
     let (p, device) = paired;
-    save_creds(&ctl, &Creds { url: base.clone(), token: p.token.clone(), name: p.server_name, device_name: device })?;
+    save_creds(
+        &ctl,
+        &Creds {
+            url: base.clone(),
+            token: p.token.clone(),
+            name: p.server_name,
+            device_name: device,
+        },
+    )?;
     *ctl.server.lock().unwrap() = Some(Server::new(&base, &p.token));
     ctl.with_lib(|l| l.set_setting("server.revision", "0"))?;
     ctl.server_online.store(true, Ordering::Relaxed);
@@ -471,7 +540,9 @@ pub fn server_disconnect(c: Ctl, keep_downloads: bool) -> R<()> {
 #[tauri::command]
 pub async fn server_sync(c: Ctl<'_>) -> R<()> {
     let ctl: Arc<Controller> = c.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || sync_all(&ctl)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || sync_all(&ctl))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -639,11 +710,17 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let st = state.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
             rt.block_on(async move {
                 let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 tx.send(l.local_addr().unwrap()).unwrap();
-                susic_server::serve(st, l, std::future::pending()).await.unwrap();
+                susic_server::serve(st, l, std::future::pending())
+                    .await
+                    .unwrap();
             });
         });
         let addr = rx.recv().unwrap();
@@ -657,15 +734,26 @@ mod tests {
         // The user already owns "Shared Song" locally (same bytes as on the server).
         let local_copy = root.join("mine");
         std::fs::create_dir_all(&local_copy).unwrap();
-        std::fs::copy(music.join("Shared Song.wav"), local_copy.join("Shared Song.wav")).unwrap();
-        let nt = susic_import::read_track(&local_copy.join("Shared Song.wav"), &ctl.artwork_dir, "local").unwrap();
+        std::fs::copy(
+            music.join("Shared Song.wav"),
+            local_copy.join("Shared Song.wav"),
+        )
+        .unwrap();
+        let nt = susic_import::read_track(
+            &local_copy.join("Shared Song.wav"),
+            &ctl.artwork_dir,
+            "local",
+        )
+        .unwrap();
         ctl.with_lib(|l| l.upsert_track(&nt)).unwrap();
 
         let paired = susic_client::pair(&base, &code, "app test").unwrap();
         *ctl.server.lock().unwrap() = Some(Server::new(&base, &paired.token));
         sync_all(&ctl).unwrap();
 
-        let all = ctl.with_lib(|l| l.list_tracks(&Default::default())).unwrap();
+        let all = ctl
+            .with_lib(|l| l.list_tracks(&Default::default()))
+            .unwrap();
         assert_eq!(all.len(), 2, "shared song must not be duplicated: {all:?}");
         let shared = all.iter().find(|t| t.title == "Shared Song").unwrap();
         let remote = all.iter().find(|t| t.title == "Remote Song").unwrap();
@@ -674,7 +762,10 @@ mod tests {
 
         // Local copy wins over streaming; server-only track streams over HTTP.
         let p = ctl.resolve_playable(shared).unwrap();
-        assert!(p.ends_with("Shared Song.wav") && !p.starts_with("http"), "{p}");
+        assert!(
+            p.ends_with("Shared Song.wav") && !p.starts_with("http"),
+            "{p}"
+        );
         let p = ctl.resolve_playable(remote).unwrap();
         assert!(p.starts_with(&format!("{base}/api/v1/tracks/")), "{p}");
         // …and that URL really serves the audio, seekably.

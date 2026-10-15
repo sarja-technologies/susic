@@ -28,6 +28,37 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci && npm audit
+        working-directory: apps/susic-app
+
+  server:
+    name: Server binary (release)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p susic-server -p susic-client
+      - run: cargo build --release -p susic-server
+      - name: Package
+        run: |
+          mkdir -p dist/susic-server
+          cp target/release/susic-server deploy/susic-server.service deploy/server.example.toml deploy/install-server.sh dist/susic-server/
+          tar -C dist -czf susic-server-linux-x86_64.tar.gz susic-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: susic-server-linux-x86_64
+          path: susic-server-linux-x86_64.tar.gz
+
   frontend:
     name: Frontend (check, test, build)
     runs-on: ubuntu-24.04

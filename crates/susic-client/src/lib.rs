@@ -154,7 +154,10 @@ pub fn pair(base: &str, code: &str, device_name: &str) -> Result<Paired> {
 
 impl Server {
     pub fn new(base: &str, token: &str) -> Self {
-        Self { base: normalise_base(base), token: token.to_string() }
+        Self {
+            base: normalise_base(base),
+            token: token.to_string(),
+        }
     }
 
     fn get(&self, path: &str) -> ureq::Request {
@@ -164,7 +167,11 @@ impl Server {
     }
 
     pub fn status(&self) -> Result<ServerStatus> {
-        self.get("/status").call().map_err(map_err)?.into_json().map_err(|e| Error::Server(e.to_string()))
+        self.get("/status")
+            .call()
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))
     }
 
     pub fn library(&self, since: i64) -> Result<LibraryDelta> {
@@ -181,25 +188,43 @@ impl Server {
         struct R {
             playlists: Vec<RemotePlaylist>,
         }
-        let r: R = self.get("/playlists").call().map_err(map_err)?.into_json().map_err(|e| Error::Server(e.to_string()))?;
+        let r: R = self
+            .get("/playlists")
+            .call()
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))?;
         Ok(r.playlists)
     }
 
     /// Returns the version now stored on the server (which may be newer than ours).
-    pub fn put_playlist(&self, uid: &str, name: &str, track_ids: &[i64], updated_at: i64) -> Result<RemotePlaylist> {
+    pub fn put_playlist(
+        &self,
+        uid: &str,
+        name: &str,
+        track_ids: &[i64],
+        updated_at: i64,
+    ) -> Result<RemotePlaylist> {
         let req = agent()
             .put(&format!("{}/api/v1/playlists/{}", self.base, uid))
             .set("Authorization", &format!("Bearer {}", self.token));
-        match req.send_json(serde_json::json!({ "name": name, "track_ids": track_ids, "updated_at": updated_at })) {
+        match req.send_json(
+            serde_json::json!({ "name": name, "track_ids": track_ids, "updated_at": updated_at }),
+        ) {
             Ok(r) => r.into_json().map_err(|e| Error::Server(e.to_string())),
-            Err(ureq::Error::Status(409, r)) => r.into_json().map_err(|e| Error::Server(e.to_string())),
+            Err(ureq::Error::Status(409, r)) => {
+                r.into_json().map_err(|e| Error::Server(e.to_string()))
+            }
             Err(e) => Err(map_err(e)),
         }
     }
 
     pub fn delete_playlist(&self, uid: &str, updated_at: i64) -> Result<()> {
         agent()
-            .delete(&format!("{}/api/v1/playlists/{}?updated_at={}", self.base, uid, updated_at))
+            .delete(&format!(
+                "{}/api/v1/playlists/{}?updated_at={}",
+                self.base, uid, updated_at
+            ))
             .set("Authorization", &format!("Bearer {}", self.token))
             .call()
             .map(|_| ())
@@ -219,17 +244,29 @@ impl Server {
     }
 
     pub fn stream_url(&self, id: i64) -> String {
-        format!("{}/api/v1/tracks/{}/stream?access_token={}", self.base, id, self.token)
+        format!(
+            "{}/api/v1/tracks/{}/stream?access_token={}",
+            self.base, id, self.token
+        )
     }
 
     pub fn lyrics(&self, id: i64) -> Option<String> {
-        self.get(&format!("/tracks/{id}/lyrics")).call().ok()?.into_string().ok()
+        self.get(&format!("/tracks/{id}/lyrics"))
+            .call()
+            .ok()?
+            .into_string()
+            .ok()
     }
 
     pub fn fetch_artwork(&self, id: i64, dest: &Path) -> Result<()> {
-        let r = self.get(&format!("/tracks/{id}/artwork")).call().map_err(map_err)?;
+        let r = self
+            .get(&format!("/tracks/{id}/artwork"))
+            .call()
+            .map_err(map_err)?;
         let mut buf = Vec::new();
-        r.into_reader().take(8 * 1024 * 1024).read_to_end(&mut buf)?;
+        r.into_reader()
+            .take(8 * 1024 * 1024)
+            .read_to_end(&mut buf)?;
         std::fs::write(dest, buf)?;
         Ok(())
     }
@@ -237,10 +274,17 @@ impl Server {
     /// Download track `id` to `dest`, resuming from `dest.part` if present.
     /// `progress(done, total)` returns false to cancel. Retries transient
     /// failures; the partial file is kept so a later call resumes.
-    pub fn download(&self, id: i64, dest: &Path, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<()> {
+    pub fn download(
+        &self,
+        id: i64,
+        dest: &Path,
+        progress: &mut dyn FnMut(u64, u64) -> bool,
+    ) -> Result<()> {
         let part = dest.with_extension(format!(
             "{}.part",
-            dest.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default()
+            dest.extension()
+                .map(|e| e.to_string_lossy().into_owned())
+                .unwrap_or_default()
         ));
         if let Some(d) = dest.parent() {
             std::fs::create_dir_all(d)?;
@@ -258,9 +302,16 @@ impl Server {
                 let total_hdr = resp
                     .header("Content-Range")
                     .and_then(|c| c.rsplit('/').next().and_then(|n| n.parse::<u64>().ok()))
-                    .or_else(|| resp.header("Content-Length").and_then(|n| n.parse::<u64>().ok()).map(|n| n + if status == 206 { have } else { 0 }));
+                    .or_else(|| {
+                        resp.header("Content-Length")
+                            .and_then(|n| n.parse::<u64>().ok())
+                            .map(|n| n + if status == 206 { have } else { 0 })
+                    });
                 let mut f = if status == 206 {
-                    std::fs::OpenOptions::new().append(true).create(true).open(&part)?
+                    std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(&part)?
                 } else {
                     std::fs::File::create(&part)? // server ignored Range: restart
                 };
@@ -269,7 +320,9 @@ impl Server {
                 let mut r = resp.into_reader();
                 let mut buf = [0u8; 64 * 1024];
                 loop {
-                    let n = r.read(&mut buf).map_err(|e| Error::Unreachable(e.to_string()))?;
+                    let n = r
+                        .read(&mut buf)
+                        .map_err(|e| Error::Unreachable(e.to_string()))?;
                     if n == 0 {
                         break;
                     }

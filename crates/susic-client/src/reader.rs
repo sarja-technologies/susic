@@ -34,7 +34,10 @@ impl Inner {
                     .and_then(|c| c.rsplit('/').next())
                     .and_then(|n| n.parse::<u64>().ok());
                 let mut buf = Vec::with_capacity(len as usize);
-                r.into_reader().take(len).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                r.into_reader()
+                    .take(len)
+                    .read_to_end(&mut buf)
+                    .map_err(|e| e.to_string())?;
                 Ok((buf, total))
             })();
             match res {
@@ -63,10 +66,19 @@ pub struct HttpRangeReader {
 impl HttpRangeReader {
     /// Probe the length with a 1-byte range request.
     pub fn open(url: &str) -> io::Result<Self> {
-        let inner = Arc::new(Inner { url: url.to_string(), agent: crate::agent() });
+        let inner = Arc::new(Inner {
+            url: url.to_string(),
+            agent: crate::agent(),
+        });
         let (_, total) = inner.fetch(0, 1)?;
         let len = total.ok_or_else(|| io::Error::other("server did not report length"))?;
-        Ok(Self { inner, len, pos: 0, cur: None, ahead: None })
+        Ok(Self {
+            inner,
+            len,
+            pos: 0,
+            cur: None,
+            ahead: None,
+        })
     }
 
     pub fn len(&self) -> u64 {
@@ -85,7 +97,9 @@ impl HttpRangeReader {
             return Ok(());
         }
         let data = match self.ahead.take() {
-            Some((i, h)) if i == idx => h.join().map_err(|_| io::Error::other("prefetch panicked"))??,
+            Some((i, h)) if i == idx => h
+                .join()
+                .map_err(|_| io::Error::other("prefetch panicked"))??,
             other => {
                 drop(other); // abandoned read-ahead finishes in the background
                 self.inner.fetch(idx * CHUNK, self.chunk_len(idx))?.0
@@ -96,7 +110,10 @@ impl HttpRangeReader {
         if next * CHUNK < self.len {
             let inner = self.inner.clone();
             let n = self.chunk_len(next);
-            self.ahead = Some((next, std::thread::spawn(move || inner.fetch(next * CHUNK, n).map(|v| v.0))));
+            self.ahead = Some((
+                next,
+                std::thread::spawn(move || inner.fetch(next * CHUNK, n).map(|v| v.0)),
+            ));
         }
         Ok(())
     }
@@ -129,7 +146,10 @@ impl Seek for HttpRangeReader {
             SeekFrom::Current(n) => self.pos as i128 + n as i128,
         };
         if new < 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek before start",
+            ));
         }
         self.pos = new as u64;
         Ok(self.pos)

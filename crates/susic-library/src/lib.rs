@@ -104,7 +104,11 @@ fn row_track(r: &Row) -> rusqlite::Result<Track> {
         availability: String::new(),
     })
     .map(|mut t| {
-        t.availability = match (t.source.as_str(), t.remote_id.is_some(), t.cache_path.is_some()) {
+        t.availability = match (
+            t.source.as_str(),
+            t.remote_id.is_some(),
+            t.cache_path.is_some(),
+        ) {
             ("server", _, true) => "downloaded",
             ("server", _, false) => "server",
             (_, true, _) => "local+server",
@@ -170,9 +174,9 @@ impl Library {
             {
                 // A server-only row for the same recording: adopt the local
                 // file, keeping id, favourites, playlists and remote link.
-                let src: String = self
-                    .conn
-                    .query_row("SELECT source FROM tracks WHERE id=?1", [id], |r| r.get(0))?;
+                let src: String =
+                    self.conn
+                        .query_row("SELECT source FROM tracks WHERE id=?1", [id], |r| r.get(0))?;
                 if src == "server" {
                     self.conn.execute(
                         "UPDATE tracks SET path=?2, source=?3, artwork=COALESCE(?4, artwork), \
@@ -380,7 +384,11 @@ impl Library {
     pub fn upsert_remote(&self, t: &NewTrack, remote_id: i64) -> Result<i64> {
         let existing: Option<i64> = self
             .conn
-            .query_row("SELECT id FROM tracks WHERE remote_id=?1", [remote_id], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM tracks WHERE remote_id=?1",
+                [remote_id],
+                |r| r.get(0),
+            )
             .optional()?
             .or(if t.hash.is_empty() {
                 None
@@ -394,7 +402,9 @@ impl Library {
                     .optional()?
             });
         if let Some(id) = existing {
-            let src: String = self.conn.query_row("SELECT source FROM tracks WHERE id=?1", [id], |r| r.get(0))?;
+            let src: String =
+                self.conn
+                    .query_row("SELECT source FROM tracks WHERE id=?1", [id], |r| r.get(0))?;
             if src == "server" {
                 // The server is authoritative for tags of server-only rows.
                 self.conn.execute(
@@ -405,7 +415,10 @@ impl Library {
                             t.track_no, t.disc_no, t.year, t.hash, t.format, t.size_bytes, t.artwork, t.lyrics],
                 )?;
             } else {
-                self.conn.execute("UPDATE tracks SET remote_id=?2 WHERE id=?1", params![id, remote_id])?;
+                self.conn.execute(
+                    "UPDATE tracks SET remote_id=?2 WHERE id=?1",
+                    params![id, remote_id],
+                )?;
             }
             return Ok(id);
         }
@@ -429,7 +442,8 @@ impl Library {
                 "DELETE FROM tracks WHERE remote_id=?1 AND source='server' AND cache_path IS NULL",
                 [rid],
             )?;
-            self.conn.execute("UPDATE tracks SET remote_id=NULL WHERE remote_id=?1", [rid])?;
+            self.conn
+                .execute("UPDATE tracks SET remote_id=NULL WHERE remote_id=?1", [rid])?;
         }
         Ok(n)
     }
@@ -439,13 +453,23 @@ impl Library {
     pub fn forget_server(&self, keep_downloads: bool) -> Result<Vec<String>> {
         let mut files = Vec::new();
         if !keep_downloads {
-            let mut st = self.conn.prepare("SELECT cache_path FROM tracks WHERE cache_path IS NOT NULL")?;
-            files = st.query_map([], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
-            self.conn.execute("UPDATE tracks SET cache_path=NULL, cache_pinned=0", [])?;
-            self.conn.execute("DELETE FROM tracks WHERE source='server'", [])?;
+            let mut st = self
+                .conn
+                .prepare("SELECT cache_path FROM tracks WHERE cache_path IS NOT NULL")?;
+            files = st
+                .query_map([], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?;
+            self.conn
+                .execute("UPDATE tracks SET cache_path=NULL, cache_pinned=0", [])?;
+            self.conn
+                .execute("DELETE FROM tracks WHERE source='server'", [])?;
         }
-        self.conn.execute("UPDATE tracks SET remote_id=NULL WHERE source<>'server'", [])?;
-        self.conn.execute("UPDATE playlists SET remote_uid=NULL", [])?;
+        self.conn.execute(
+            "UPDATE tracks SET remote_id=NULL WHERE source<>'server'",
+            [],
+        )?;
+        self.conn
+            .execute("UPDATE playlists SET remote_uid=NULL", [])?;
         Ok(files)
     }
 
@@ -463,7 +487,9 @@ impl Library {
             "SELECT id, cache_path, size_bytes, cache_pinned FROM tracks WHERE cache_path IS NOT NULL \
              ORDER BY COALESCE(last_played, added_at)",
         )?;
-        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0)))?;
+        let rows = st.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0))
+        })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
@@ -476,20 +502,29 @@ impl Library {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
     pub fn set_artwork(&self, id: i64, path: &str) -> Result<()> {
-        self.conn.execute("UPDATE tracks SET artwork=?2 WHERE id=?1", params![id, path])?;
+        self.conn.execute(
+            "UPDATE tracks SET artwork=?2 WHERE id=?1",
+            params![id, path],
+        )?;
         Ok(())
     }
 
     pub fn track_by_remote(&self, remote_id: i64) -> Result<Option<i64>> {
         Ok(self
             .conn
-            .query_row("SELECT id FROM tracks WHERE remote_id=?1", [remote_id], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM tracks WHERE remote_id=?1",
+                [remote_id],
+                |r| r.get(0),
+            )
             .optional()?)
     }
 
     /// Favourite state set from the server without bumping local ordering.
     pub fn remote_favourite_ids(&self) -> Result<Vec<(i64, i64, bool)>> {
-        let mut st = self.conn.prepare("SELECT id, remote_id, favourite FROM tracks WHERE remote_id IS NOT NULL")?;
+        let mut st = self
+            .conn
+            .prepare("SELECT id, remote_id, favourite FROM tracks WHERE remote_id IS NOT NULL")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
@@ -497,23 +532,35 @@ impl Library {
     pub fn playlist_remote_uid(&self, id: i64) -> Result<Option<String>> {
         Ok(self
             .conn
-            .query_row("SELECT remote_uid FROM playlists WHERE id=?1", [id], |r| r.get(0))
+            .query_row("SELECT remote_uid FROM playlists WHERE id=?1", [id], |r| {
+                r.get(0)
+            })
             .optional()?
             .flatten())
     }
     pub fn set_playlist_remote_uid(&self, id: i64, uid: &str) -> Result<()> {
-        self.conn.execute("UPDATE playlists SET remote_uid=?2 WHERE id=?1", params![id, uid])?;
+        self.conn.execute(
+            "UPDATE playlists SET remote_uid=?2 WHERE id=?1",
+            params![id, uid],
+        )?;
         Ok(())
     }
     pub fn playlist_by_remote_uid(&self, uid: &str) -> Result<Option<(i64, i64)>> {
         Ok(self
             .conn
-            .query_row("SELECT id, updated_at FROM playlists WHERE remote_uid=?1", [uid], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT id, updated_at FROM playlists WHERE remote_uid=?1",
+                [uid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?)
     }
     /// Touch a playlist's update time to an exact value (sync bookkeeping).
     pub fn set_playlist_updated_at(&self, id: i64, at: i64) -> Result<()> {
-        self.conn.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, at])?;
+        self.conn.execute(
+            "UPDATE playlists SET updated_at=?2 WHERE id=?1",
+            params![id, at],
+        )?;
         Ok(())
     }
 
@@ -649,12 +696,15 @@ impl Library {
     }
 
     pub fn take_playlist_tombstones(&self) -> Result<Vec<(String, i64)>> {
-        let mut st = self.conn.prepare("SELECT uid, deleted_at FROM playlist_tombstones")?;
+        let mut st = self
+            .conn
+            .prepare("SELECT uid, deleted_at FROM playlist_tombstones")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
     pub fn clear_playlist_tombstone(&self, uid: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM playlist_tombstones WHERE uid=?1", [uid])?;
+        self.conn
+            .execute("DELETE FROM playlist_tombstones WHERE uid=?1", [uid])?;
         Ok(())
     }
 

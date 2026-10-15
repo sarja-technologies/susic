@@ -126,6 +126,9 @@ pub struct ScanTrack {
     pub lyrics: Option<String>,
 }
 
+/// (rel_path, id, size_bytes, mtime, missing)
+pub type PathEntry = (String, i64, i64, i64, bool);
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -134,7 +137,8 @@ pub fn hash_secret(s: &str) -> String {
     blake3::hash(s.as_bytes()).to_hex().to_string()
 }
 
-const TRACK_COLS: &str = "id, title, artist, album, album_artist, duration_ms, track_no, disc_no, year, \
+const TRACK_COLS: &str =
+    "id, title, artist, album, album_artist, duration_ms, track_no, disc_no, year, \
      format, size_bytes, hash, artwork IS NOT NULL, lyrics IS NOT NULL, favourite, rev";
 
 fn track_from_row(r: &rusqlite::Row) -> rusqlite::Result<TrackRow> {
@@ -159,8 +163,15 @@ fn track_from_row(r: &rusqlite::Row) -> rusqlite::Result<TrackRow> {
 }
 
 fn bump_rev(conn: &Connection) -> rusqlite::Result<i64> {
-    conn.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'rev'", [])?;
-    conn.query_row("SELECT CAST(value AS INTEGER) FROM meta WHERE key='rev'", [], |r| r.get(0))
+    conn.execute(
+        "UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'rev'",
+        [],
+    )?;
+    conn.query_row(
+        "SELECT CAST(value AS INTEGER) FROM meta WHERE key='rev'",
+        [],
+        |r| r.get(0),
+    )
 }
 
 impl Db {
@@ -177,14 +188,17 @@ impl Db {
     }
 
     fn init(conn: Connection) -> Result<Self> {
-        let current: usize = conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? as usize;
+        let current: usize =
+            conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? as usize;
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch(sql)?;
             tx.pragma_update(None, "user_version", (i + 1) as i64)?;
             tx.commit()?;
         }
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     fn c(&self) -> MutexGuard<'_, Connection> {
@@ -192,22 +206,38 @@ impl Db {
     }
 
     pub fn revision(&self) -> Result<i64> {
-        Ok(self.c().query_row("SELECT CAST(value AS INTEGER) FROM meta WHERE key='rev'", [], |r| r.get(0))?)
+        Ok(self.c().query_row(
+            "SELECT CAST(value AS INTEGER) FROM meta WHERE key='rev'",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     // ---- library ----
-    /// path → (id, size, mtime, missing)
-    pub fn path_index(&self) -> Result<Vec<(String, i64, i64, i64, bool)>> {
+    /// Every known row as (rel_path, id, size, mtime, missing).
+    pub fn path_index(&self) -> Result<Vec<PathEntry>> {
         let c = self.c();
         let mut st = c.prepare("SELECT rel_path, id, size_bytes, mtime, missing FROM tracks")?;
         let rows = st
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? != 0)))?
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get::<_, i64>(4)? != 0,
+                ))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
     pub fn live_count(&self) -> Result<i64> {
-        Ok(self.c().query_row("SELECT COUNT(*) FROM tracks WHERE missing=0", [], |r| r.get(0))?)
+        Ok(self
+            .c()
+            .query_row("SELECT COUNT(*) FROM tracks WHERE missing=0", [], |r| {
+                r.get(0)
+            })?)
     }
 
     /// Insert or update the row for `t.rel_path`, preserving id and favourite.
@@ -216,7 +246,11 @@ impl Db {
         let tx = c.unchecked_transaction()?;
         let rev = bump_rev(&tx)?;
         let existing: Option<i64> = tx
-            .query_row("SELECT id FROM tracks WHERE rel_path=?1", [&t.rel_path], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM tracks WHERE rel_path=?1",
+                [&t.rel_path],
+                |r| r.get(0),
+            )
             .optional()?;
         let id = if let Some(id) = existing {
             tx.execute(
@@ -263,7 +297,10 @@ impl Db {
         let tx = c.unchecked_transaction()?;
         let rev = bump_rev(&tx)?;
         for id in ids {
-            tx.execute("UPDATE tracks SET missing=1, rev=?2 WHERE id=?1", params![id, rev])?;
+            tx.execute(
+                "UPDATE tracks SET missing=1, rev=?2 WHERE id=?1",
+                params![id, rev],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -273,21 +310,31 @@ impl Db {
     pub fn find_by_hash(&self, hash: &str, among: &[i64]) -> Result<Option<i64>> {
         let c = self.c();
         let mut st = c.prepare("SELECT id FROM tracks WHERE hash=?1")?;
-        let ids: Vec<i64> = st.query_map([hash], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        let ids: Vec<i64> = st
+            .query_map([hash], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
         Ok(ids.into_iter().find(|i| among.contains(i)))
     }
 
     pub fn rel_path(&self, id: i64) -> Result<Option<String>> {
         Ok(self
             .c()
-            .query_row("SELECT rel_path FROM tracks WHERE id=?1 AND missing=0", [id], |r| r.get(0))
+            .query_row(
+                "SELECT rel_path FROM tracks WHERE id=?1 AND missing=0",
+                [id],
+                |r| r.get(0),
+            )
             .optional()?)
     }
 
     pub fn artwork(&self, id: i64) -> Result<Option<String>> {
         Ok(self
             .c()
-            .query_row("SELECT artwork FROM tracks WHERE id=?1 AND missing=0", [id], |r| r.get::<_, Option<String>>(0))
+            .query_row(
+                "SELECT artwork FROM tracks WHERE id=?1 AND missing=0",
+                [id],
+                |r| r.get::<_, Option<String>>(0),
+            )
             .optional()?
             .flatten())
     }
@@ -295,7 +342,11 @@ impl Db {
     pub fn lyrics(&self, id: i64) -> Result<Option<String>> {
         Ok(self
             .c()
-            .query_row("SELECT lyrics FROM tracks WHERE id=?1 AND missing=0", [id], |r| r.get::<_, Option<String>>(0))
+            .query_row(
+                "SELECT lyrics FROM tracks WHERE id=?1 AND missing=0",
+                [id],
+                |r| r.get::<_, Option<String>>(0),
+            )
             .optional()?
             .flatten())
     }
@@ -303,11 +354,16 @@ impl Db {
     /// Tracks changed after `since` plus ids removed after `since`.
     pub fn changes(&self, since: i64) -> Result<(Vec<TrackRow>, Vec<i64>)> {
         let c = self.c();
-        let sql = format!("SELECT {TRACK_COLS} FROM tracks WHERE missing=0 AND rev > ?1 ORDER BY id");
+        let sql =
+            format!("SELECT {TRACK_COLS} FROM tracks WHERE missing=0 AND rev > ?1 ORDER BY id");
         let mut st = c.prepare(&sql)?;
-        let tracks = st.query_map([since], track_from_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let tracks = st
+            .query_map([since], track_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut st = c.prepare("SELECT id FROM tracks WHERE missing=1 AND rev > ?1")?;
-        let removed = st.query_map([since], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let removed = st
+            .query_map([since], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok((tracks, removed))
     }
 
@@ -331,7 +387,10 @@ impl Db {
     pub fn add_pair_code(&self, code_hash: &str, expires_at: i64) -> Result<()> {
         let c = self.c();
         c.execute("DELETE FROM pair_codes WHERE expires_at < ?1", [now()])?;
-        c.execute("INSERT OR REPLACE INTO pair_codes VALUES (?1, ?2)", params![code_hash, expires_at])?;
+        c.execute(
+            "INSERT OR REPLACE INTO pair_codes VALUES (?1, ?2)",
+            params![code_hash, expires_at],
+        )?;
         Ok(())
     }
 
@@ -366,7 +425,10 @@ impl Db {
         if let Some((id, seen)) = row {
             let t = now();
             if t - seen > 60 {
-                c.execute("UPDATE devices SET last_seen=?2 WHERE id=?1", params![id, t])?;
+                c.execute(
+                    "UPDATE devices SET last_seen=?2 WHERE id=?1",
+                    params![id, t],
+                )?;
             }
             return Ok(Some(id));
         }
@@ -375,7 +437,8 @@ impl Db {
 
     pub fn devices(&self) -> Result<Vec<DeviceRow>> {
         let c = self.c();
-        let mut st = c.prepare("SELECT id, name, created_at, last_seen, revoked FROM devices ORDER BY id")?;
+        let mut st =
+            c.prepare("SELECT id, name, created_at, last_seen, revoked FROM devices ORDER BY id")?;
         let rows = st
             .query_map([], |r| {
                 Ok(DeviceRow {
@@ -391,23 +454,44 @@ impl Db {
     }
 
     pub fn revoke_device(&self, id: i64) -> Result<bool> {
-        Ok(self.c().execute("UPDATE devices SET revoked=1 WHERE id=?1", [id])? > 0)
+        Ok(self
+            .c()
+            .execute("UPDATE devices SET revoked=1 WHERE id=?1", [id])?
+            > 0)
     }
 
     // ---- playlists ----
     pub fn playlists_since(&self, since: i64) -> Result<Vec<PlaylistRow>> {
         let c = self.c();
-        let mut st = c.prepare("SELECT uid, name, updated_at, deleted, rev FROM playlists WHERE rev > ?1 ORDER BY rev")?;
+        let mut st = c.prepare(
+            "SELECT uid, name, updated_at, deleted, rev FROM playlists WHERE rev > ?1 ORDER BY rev",
+        )?;
         let heads = st
             .query_map([since], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)? != 0, r.get::<_, i64>(4)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)? != 0,
+                    r.get::<_, i64>(4)?,
+                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut out = Vec::new();
         for (uid, name, updated_at, deleted, rev) in heads {
-            let mut st = c.prepare("SELECT track_id FROM playlist_items WHERE uid=?1 ORDER BY pos")?;
-            let track_ids = st.query_map([&uid], |r| r.get(0))?.collect::<rusqlite::Result<Vec<i64>>>()?;
-            out.push(PlaylistRow { uid, name, updated_at, deleted, track_ids, rev });
+            let mut st =
+                c.prepare("SELECT track_id FROM playlist_items WHERE uid=?1 ORDER BY pos")?;
+            let track_ids = st
+                .query_map([&uid], |r| r.get(0))?
+                .collect::<rusqlite::Result<Vec<i64>>>()?;
+            out.push(PlaylistRow {
+                uid,
+                name,
+                updated_at,
+                deleted,
+                track_ids,
+                rev,
+            });
         }
         Ok(out)
     }
@@ -415,19 +499,39 @@ impl Db {
     pub fn get_playlist(&self, uid: &str) -> Result<Option<PlaylistRow>> {
         let c = self.c();
         let head: Option<(String, i64, bool, i64)> = c
-            .query_row("SELECT name, updated_at, deleted, rev FROM playlists WHERE uid=?1", [uid], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?))
-            })
+            .query_row(
+                "SELECT name, updated_at, deleted, rev FROM playlists WHERE uid=?1",
+                [uid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
+            )
             .optional()?;
-        let Some((name, updated_at, deleted, rev)) = head else { return Ok(None) };
+        let Some((name, updated_at, deleted, rev)) = head else {
+            return Ok(None);
+        };
         let mut st = c.prepare("SELECT track_id FROM playlist_items WHERE uid=?1 ORDER BY pos")?;
-        let track_ids = st.query_map([uid], |r| r.get(0))?.collect::<rusqlite::Result<Vec<i64>>>()?;
-        Ok(Some(PlaylistRow { uid: uid.into(), name, updated_at, deleted, track_ids, rev }))
+        let track_ids = st
+            .query_map([uid], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()?;
+        Ok(Some(PlaylistRow {
+            uid: uid.into(),
+            name,
+            updated_at,
+            deleted,
+            track_ids,
+            rev,
+        }))
     }
 
     /// Last-writer-wins by `updated_at`. Returns the stored row and whether the
     /// incoming version was applied.
-    pub fn put_playlist(&self, uid: &str, name: &str, track_ids: &[i64], updated_at: i64, deleted: bool) -> Result<(PlaylistRow, bool)> {
+    pub fn put_playlist(
+        &self,
+        uid: &str,
+        name: &str,
+        track_ids: &[i64],
+        updated_at: i64,
+        deleted: bool,
+    ) -> Result<(PlaylistRow, bool)> {
         if let Some(cur) = self.get_playlist(uid)? {
             if cur.updated_at > updated_at {
                 return Ok((cur, false));

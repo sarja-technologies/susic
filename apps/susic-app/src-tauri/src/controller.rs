@@ -180,9 +180,14 @@ impl Controller {
             .with_lib(|l| l.get_track(id))
             .ok()
             .flatten()
-            .map(|t| t.remote_id.is_some() && !matches!(self.resolve_playable(&t), Ok(p) if !p.starts_with("http")))
+            .map(|t| {
+                t.remote_id.is_some()
+                    && !matches!(self.resolve_playable(&t), Ok(p) if !p.starts_with("http"))
+            })
             .unwrap_or(false);
-        if !streamed || !(err.contains("reach server") || err.contains("onnection") || err.contains("HTTP")) {
+        if !streamed
+            || !(err.contains("reach server") || err.contains("onnection") || err.contains("HTTP"))
+        {
             return;
         }
         let gen = self.load_gen.load(Ordering::SeqCst);

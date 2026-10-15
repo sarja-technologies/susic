@@ -46,7 +46,10 @@ fn mtime_of(p: &Path) -> i64 {
 pub fn scan(db: &Db, cfg: &Config, cancel: &AtomicBool) -> std::result::Result<ScanReport, String> {
     let root = &cfg.music_dir;
     if !root.is_dir() {
-        return Err(format!("music directory {} is not available", root.display()));
+        return Err(format!(
+            "music directory {} is not available",
+            root.display()
+        ));
     }
     std::fs::create_dir_all(cfg.artwork_dir()).map_err(|e| e.to_string())?;
     let mut report = ScanReport::default();
@@ -55,11 +58,19 @@ pub fn scan(db: &Db, cfg: &Config, cancel: &AtomicBool) -> std::result::Result<S
     Ok(report)
 }
 
-fn run(db: &Db, cfg: &Config, files: &[std::path::PathBuf], report: &mut ScanReport, cancel: &AtomicBool) -> Result<()> {
+fn run(
+    db: &Db,
+    cfg: &Config,
+    files: &[std::path::PathBuf],
+    report: &mut ScanReport,
+    cancel: &AtomicBool,
+) -> Result<()> {
     let root = &cfg.music_dir;
     let index = db.path_index()?;
-    let known: HashMap<&str, (i64, i64, i64, bool)> =
-        index.iter().map(|(p, id, s, m, miss)| (p.as_str(), (*id, *s, *m, *miss))).collect();
+    let known: HashMap<&str, (i64, i64, i64, bool)> = index
+        .iter()
+        .map(|(p, id, s, m, miss)| (p.as_str(), (*id, *s, *m, *miss)))
+        .collect();
     let seen: HashSet<String> = files.iter().map(|f| rel_string(root, f)).collect();
     // Rows whose file is no longer at its recorded path; candidates for "moved".
     let mut unseen: Vec<i64> = index
@@ -68,7 +79,11 @@ fn run(db: &Db, cfg: &Config, files: &[std::path::PathBuf], report: &mut ScanRep
         .map(|(_, id, _, _, _)| *id)
         .collect();
     // Previously-missing rows can also be revived by a moved file.
-    let revivable: Vec<i64> = index.iter().filter(|(_, _, _, _, miss)| *miss).map(|r| r.1).collect();
+    let revivable: Vec<i64> = index
+        .iter()
+        .filter(|(_, _, _, _, miss)| *miss)
+        .map(|r| r.1)
+        .collect();
     let artwork_dir = cfg.artwork_dir();
 
     for file in files {

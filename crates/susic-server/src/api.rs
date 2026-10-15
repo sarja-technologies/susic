@@ -116,13 +116,19 @@ pub fn router(state: S) -> Router {
 
 // ---- auth ----
 fn token_from(headers: &HeaderMap, query: Option<&str>) -> Option<String> {
-    if let Some(v) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+    if let Some(v) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
         if let Some(t) = v.strip_prefix("Bearer ") {
             return Some(t.trim().to_string());
         }
     }
     // Media players (Media3, <audio>) cannot always set headers.
-    query?.split('&').find_map(|kv| kv.strip_prefix("access_token=")).map(|s| s.to_string())
+    query?
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("access_token="))
+        .map(|s| s.to_string())
 }
 
 async fn auth(State(s): State<S>, req: Request, next: Next) -> Response {
@@ -134,12 +140,17 @@ async fn auth(State(s): State<S>, req: Request, next: Next) -> Response {
     let ok = tokio::task::spawn_blocking(move || s2.db.authenticate(&h)).await;
     match ok {
         Ok(Ok(Some(_))) => next.run(req).await,
-        Ok(Ok(None)) => ApiError(StatusCode::UNAUTHORIZED, "invalid or revoked token".into()).into_response(),
+        Ok(Ok(None)) => {
+            ApiError(StatusCode::UNAUTHORIZED, "invalid or revoked token".into()).into_response()
+        }
         _ => ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal error".into()).into_response(),
     }
 }
 
-async fn blocking<T: Send + 'static>(s: &S, f: impl FnOnce(&AppState) -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
+async fn blocking<T: Send + 'static>(
+    s: &S,
+    f: impl FnOnce(&AppState) -> ApiResult<T> + Send + 'static,
+) -> ApiResult<T> {
     let s = s.clone();
     tokio::task::spawn_blocking(move || f(&s))
         .await
@@ -179,7 +190,10 @@ struct PairResp {
 }
 
 pub fn normalise_code(c: &str) -> String {
-    c.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_uppercase()
+    c.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_uppercase()
 }
 
 async fn pair(State(s): State<S>, Json(req): Json<PairReq>) -> ApiResult<Json<PairResp>> {
@@ -189,12 +203,18 @@ async fn pair(State(s): State<S>, Json(req): Json<PairReq>) -> ApiResult<Json<Pa
             *f = (0, Instant::now());
         }
         if f.0 >= 10 {
-            return Err(ApiError(StatusCode::TOO_MANY_REQUESTS, "too many failed attempts; wait a minute".into()));
+            return Err(ApiError(
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many failed attempts; wait a minute".into(),
+            ));
         }
     }
     let name = req.device_name.trim().chars().take(64).collect::<String>();
     if name.is_empty() {
-        return Err(ApiError(StatusCode::BAD_REQUEST, "device_name required".into()));
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "device_name required".into(),
+        ));
     }
     let code_hash = hash_secret(&normalise_code(&req.code));
     let resp = blocking(&s, move |st| {
@@ -204,7 +224,11 @@ async fn pair(State(s): State<S>, Json(req): Json<PairReq>) -> ApiResult<Json<Pa
         let token = crate::random_token();
         let id = st.db.add_device(&name, &hash_secret(&token))?;
         crate::log("info", &format!("paired device #{id} ({name})"));
-        Ok(Some(PairResp { token, device_id: id, server_name: st.cfg.server_name.clone() }))
+        Ok(Some(PairResp {
+            token,
+            device_id: id,
+            server_name: st.cfg.server_name.clone(),
+        }))
     })
     .await?;
     match resp {
@@ -212,7 +236,10 @@ async fn pair(State(s): State<S>, Json(req): Json<PairReq>) -> ApiResult<Json<Pa
         None => {
             let mut f = s.pair_failures.lock().unwrap();
             f.0 += 1;
-            Err(ApiError(StatusCode::FORBIDDEN, "invalid or expired pairing code".into()))
+            Err(ApiError(
+                StatusCode::FORBIDDEN,
+                "invalid or expired pairing code".into(),
+            ))
         }
     }
 }
@@ -259,18 +286,27 @@ struct LibraryResp {
     removed: Vec<i64>,
 }
 
-async fn library(State(s): State<S>, Query(q): Query<HashMap<String, String>>) -> ApiResult<Json<LibraryResp>> {
+async fn library(
+    State(s): State<S>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Json<LibraryResp>> {
     let since: i64 = q.get("since").and_then(|v| v.parse().ok()).unwrap_or(0);
     blocking(&s, move |st| {
         let revision = st.db.revision()?;
         let (tracks, removed) = st.db.changes(since)?;
-        Ok(Json(LibraryResp { revision, tracks, removed }))
+        Ok(Json(LibraryResp {
+            revision,
+            tracks,
+            removed,
+        }))
     })
     .await
 }
 
 async fn stream(State(s): State<S>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
-    let rel = blocking(&s, move |st| st.db.rel_path(id).map_err(Into::into)).await?.ok_or_else(|| not_found("track"))?;
+    let rel = blocking(&s, move |st| st.db.rel_path(id).map_err(Into::into))
+        .await?
+        .ok_or_else(|| not_found("track"))?;
     if rel.split('/').any(|c| c == ".." || c.is_empty()) {
         return Err(not_found("track"));
     }
@@ -285,20 +321,27 @@ async fn stream(State(s): State<S>, Path(id): Path<i64>, req: Request) -> ApiRes
 }
 
 async fn artwork(State(s): State<S>, Path(id): Path<i64>, req: Request) -> ApiResult<Response> {
-    let name = blocking(&s, move |st| st.db.artwork(id).map_err(Into::into)).await?.ok_or_else(|| not_found("artwork"))?;
+    let name = blocking(&s, move |st| st.db.artwork(id).map_err(Into::into))
+        .await?
+        .ok_or_else(|| not_found("artwork"))?;
     if name.contains('/') || name.contains("..") {
         return Err(not_found("artwork"));
     }
     let (parts, _) = req.into_parts();
     let req = Request::from_parts(parts, Body::empty());
-    match ServeFile::new(s.cfg.artwork_dir().join(name)).oneshot(req).await {
+    match ServeFile::new(s.cfg.artwork_dir().join(name))
+        .oneshot(req)
+        .await
+    {
         Ok(resp) => Ok(resp.into_response()),
         Err(e) => match e {},
     }
 }
 
 async fn lyrics(State(s): State<S>, Path(id): Path<i64>) -> ApiResult<Response> {
-    let l = blocking(&s, move |st| st.db.lyrics(id).map_err(Into::into)).await?.ok_or_else(|| not_found("lyrics"))?;
+    let l = blocking(&s, move |st| st.db.lyrics(id).map_err(Into::into))
+        .await?
+        .ok_or_else(|| not_found("lyrics"))?;
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], l).into_response())
 }
 
@@ -306,17 +349,33 @@ async fn lyrics(State(s): State<S>, Path(id): Path<i64>) -> ApiResult<Response> 
 struct FavReq {
     favourite: bool,
 }
-async fn set_favourite(State(s): State<S>, Path(id): Path<i64>, Json(b): Json<FavReq>) -> ApiResult<StatusCode> {
-    let ok = blocking(&s, move |st| st.db.set_favourite(id, b.favourite).map_err(Into::into)).await?;
-    if ok { Ok(StatusCode::NO_CONTENT) } else { Err(not_found("track")) }
+async fn set_favourite(
+    State(s): State<S>,
+    Path(id): Path<i64>,
+    Json(b): Json<FavReq>,
+) -> ApiResult<StatusCode> {
+    let ok = blocking(&s, move |st| {
+        st.db.set_favourite(id, b.favourite).map_err(Into::into)
+    })
+    .await?;
+    if ok {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(not_found("track"))
+    }
 }
 
-async fn list_playlists(State(s): State<S>, Query(q): Query<HashMap<String, String>>) -> ApiResult<Json<serde_json::Value>> {
+async fn list_playlists(
+    State(s): State<S>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Json<serde_json::Value>> {
     let since: i64 = q.get("since").and_then(|v| v.parse().ok()).unwrap_or(0);
     blocking(&s, move |st| {
         let revision = st.db.revision()?;
         let playlists = st.db.playlists_since(since)?;
-        Ok(Json(serde_json::json!({ "revision": revision, "playlists": playlists })))
+        Ok(Json(
+            serde_json::json!({ "revision": revision, "playlists": playlists }),
+        ))
     })
     .await
 }
@@ -328,15 +387,25 @@ struct PutPlaylist {
     updated_at: i64,
 }
 
-async fn put_playlist(State(s): State<S>, Path(uid): Path<String>, Json(b): Json<PutPlaylist>) -> ApiResult<Response> {
+async fn put_playlist(
+    State(s): State<S>,
+    Path(uid): Path<String>,
+    Json(b): Json<PutPlaylist>,
+) -> ApiResult<Response> {
     if uid.is_empty() || uid.len() > 64 {
         return Err(ApiError(StatusCode::BAD_REQUEST, "bad playlist id".into()));
     }
     let (row, applied): (PlaylistRow, bool) = blocking(&s, move |st| {
-        st.db.put_playlist(&uid, &b.name, &b.track_ids, b.updated_at, false).map_err(Into::into)
+        st.db
+            .put_playlist(&uid, &b.name, &b.track_ids, b.updated_at, false)
+            .map_err(Into::into)
     })
     .await?;
-    let code = if applied { StatusCode::OK } else { StatusCode::CONFLICT };
+    let code = if applied {
+        StatusCode::OK
+    } else {
+        StatusCode::CONFLICT
+    };
     Ok((code, Json(row)).into_response())
 }
 
@@ -344,9 +413,16 @@ async fn put_playlist(State(s): State<S>, Path(uid): Path<String>, Json(b): Json
 struct DelQuery {
     updated_at: Option<i64>,
 }
-async fn delete_playlist(State(s): State<S>, Path(uid): Path<String>, Query(q): Query<DelQuery>) -> ApiResult<StatusCode> {
+async fn delete_playlist(
+    State(s): State<S>,
+    Path(uid): Path<String>,
+    Query(q): Query<DelQuery>,
+) -> ApiResult<StatusCode> {
     blocking(&s, move |st| {
-        let cur = st.db.get_playlist(&uid)?.ok_or_else(|| not_found("playlist"))?;
+        let cur = st
+            .db
+            .get_playlist(&uid)?
+            .ok_or_else(|| not_found("playlist"))?;
         let t = q.updated_at.unwrap_or_else(now).max(cur.updated_at);
         st.db.put_playlist(&uid, &cur.name, &[], t, true)?;
         Ok(())
@@ -356,12 +432,19 @@ async fn delete_playlist(State(s): State<S>, Path(uid): Path<String>, Query(q): 
 }
 
 async fn list_devices(State(s): State<S>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&s, |st| Ok(Json(serde_json::json!({ "devices": st.db.devices()? })))).await
+    blocking(&s, |st| {
+        Ok(Json(serde_json::json!({ "devices": st.db.devices()? })))
+    })
+    .await
 }
 
 async fn revoke_device(State(s): State<S>, Path(id): Path<i64>) -> ApiResult<StatusCode> {
     let ok = blocking(&s, move |st| st.db.revoke_device(id).map_err(Into::into)).await?;
-    if ok { Ok(StatusCode::NO_CONTENT) } else { Err(not_found("device")) }
+    if ok {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(not_found("device"))
+    }
 }
 
 async fn trigger_scan(State(s): State<S>) -> StatusCode {

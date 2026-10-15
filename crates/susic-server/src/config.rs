@@ -50,7 +50,9 @@ impl Config {
             cfg.data_dir = v.into();
         }
         if let Ok(v) = std::env::var("SUSIC_SCAN_INTERVAL") {
-            cfg.scan_interval_secs = v.parse().map_err(|_| "SUSIC_SCAN_INTERVAL must be a number")?;
+            cfg.scan_interval_secs = v
+                .parse()
+                .map_err(|_| "SUSIC_SCAN_INTERVAL must be a number")?;
         }
         Ok(cfg)
     }

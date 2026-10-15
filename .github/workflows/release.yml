@@ -27,12 +27,19 @@ jobs:
       - run: npx tauri build --bundles deb,appimage
         working-directory: apps/susic-app
         env: { NO_STRIP: "true" }
+      - name: Server tarball
+        run: |
+          cargo build --release -p susic-server
+          mkdir -p dist/susic-server
+          cp target/release/susic-server deploy/susic-server.service deploy/server.example.toml deploy/install-server.sh dist/susic-server/
+          tar -C dist -czf target/release/bundle/susic-server-linux-x86_64.tar.gz susic-server
       - name: Checksums
-        run: cd target/release/bundle && sha256sum deb/*.deb appimage/*.AppImage > SHA256SUMS.txt
+        run: cd target/release/bundle && sha256sum deb/*.deb appimage/*.AppImage susic-server-linux-x86_64.tar.gz > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
           files: |
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
+            target/release/bundle/susic-server-linux-x86_64.tar.gz
             target/release/bundle/SHA256SUMS.txt

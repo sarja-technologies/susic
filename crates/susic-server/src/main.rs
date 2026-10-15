@@ -31,7 +31,11 @@ fn main() {
         config_path = Some(args[i + 1].clone().into());
         args.drain(i..i + 2);
     }
-    let cmd = args.first().map(String::as_str).unwrap_or("serve").to_string();
+    let cmd = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("serve")
+        .to_string();
     if matches!(cmd.as_str(), "-h" | "--help" | "help") {
         println!("{USAGE}");
         return;
@@ -63,13 +67,22 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
     match cmd.as_str() {
         "check" => {
             println!("bind:        {}", cfg.bind);
-            println!("music_dir:   {} ({})", cfg.music_dir.display(), if cfg.music_dir.is_dir() { "ok" } else { "MISSING" });
+            println!(
+                "music_dir:   {} ({})",
+                cfg.music_dir.display(),
+                if cfg.music_dir.is_dir() {
+                    "ok"
+                } else {
+                    "MISSING"
+                }
+            );
             println!("data_dir:    {}", cfg.data_dir.display());
             println!("scan every:  {}s", cfg.scan_interval_secs);
             if !cfg.music_dir.is_dir() {
                 return Err("music_dir does not exist or is not a directory".into());
             }
-            std::fs::create_dir_all(&cfg.data_dir).map_err(|e| format!("data_dir not writable: {e}"))?;
+            std::fs::create_dir_all(&cfg.data_dir)
+                .map_err(|e| format!("data_dir not writable: {e}"))?;
             println!("ok");
             Ok(())
         }
@@ -93,12 +106,22 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
         "devices" => {
             let st = susic_server::open_state(cfg)?;
             for d in st.db.devices().map_err(|e| e.to_string())? {
-                println!("#{:<3} {:<28} paired {} last seen {}{}", d.id, d.name, d.created_at, d.last_seen, if d.revoked { "  [revoked]" } else { "" });
+                println!(
+                    "#{:<3} {:<28} paired {} last seen {}{}",
+                    d.id,
+                    d.name,
+                    d.created_at,
+                    d.last_seen,
+                    if d.revoked { "  [revoked]" } else { "" }
+                );
             }
             Ok(())
         }
         "revoke" => {
-            let id: i64 = args.get(1).and_then(|s| s.parse().ok()).ok_or("usage: revoke <ID>")?;
+            let id: i64 = args
+                .get(1)
+                .and_then(|s| s.parse().ok())
+                .ok_or("usage: revoke <ID>")?;
             let st = susic_server::open_state(cfg)?;
             if st.db.revoke_device(id).map_err(|e| e.to_string())? {
                 println!("device #{id} revoked");
@@ -109,7 +132,10 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
         }
         "purge-missing" => {
             let st = susic_server::open_state(cfg)?;
-            println!("purged {} tracks", st.db.purge_missing().map_err(|e| e.to_string())?);
+            println!(
+                "purged {} tracks",
+                st.db.purge_missing().map_err(|e| e.to_string())?
+            );
             Ok(())
         }
         "serve" => serve(cfg),
@@ -130,15 +156,40 @@ fn serve(cfg: Config) -> Result<(), String> {
             .await
             .map_err(|e| format!("cannot bind {}: {e}", cfg.bind))?;
         let live = st.db.live_count().map_err(|e| e.to_string())?;
-        susic_server::log("info", &format!("susic-server {} listening on {} (music: {}, {} tracks indexed)", env!("CARGO_PKG_VERSION"), cfg.bind, cfg.music_dir.display(), live));
+        susic_server::log(
+            "info",
+            &format!(
+                "susic-server {} listening on {} (music: {}, {} tracks indexed)",
+                env!("CARGO_PKG_VERSION"),
+                cfg.bind,
+                cfg.music_dir.display(),
+                live
+            ),
+        );
         if !cfg.music_dir.is_dir() {
-            susic_server::log("warn", &format!("music_dir {} is not available; serving the existing index until it appears", cfg.music_dir.display()));
+            susic_server::log(
+                "warn",
+                &format!(
+                    "music_dir {} is not available; serving the existing index until it appears",
+                    cfg.music_dir.display()
+                ),
+            );
         }
-        if st.db.devices().map(|d| d.iter().all(|x| x.revoked)).unwrap_or(true) {
-            susic_server::log("info", "no paired devices yet: run `susic-server pair` to create a pairing code");
+        if st
+            .db
+            .devices()
+            .map(|d| d.iter().all(|x| x.revoked))
+            .unwrap_or(true)
+        {
+            susic_server::log(
+                "info",
+                "no paired devices yet: run `susic-server pair` to create a pairing code",
+            );
         }
         let _ = db::now();
-        susic_server::serve(st, listener, shutdown_signal()).await.map_err(|e| e.to_string())
+        susic_server::serve(st, listener, shutdown_signal())
+            .await
+            .map_err(|e| e.to_string())
     })
 }
 

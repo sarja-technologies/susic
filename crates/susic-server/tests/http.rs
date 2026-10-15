@@ -1,8 +1,9 @@
+#![allow(clippy::result_large_err)]
 //! Integration tests: a real server on a real socket, real WAV files on disk.
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use susic_server::{Config, AppState};
+use susic_server::{AppState, Config};
 
 fn write_wav(path: &Path, secs: f32, freq: f32) {
     let rate = 8000u32;
@@ -54,23 +55,40 @@ impl Fixture {
         let (stop, stop_rx) = tokio::sync::oneshot::channel::<()>();
         let st = state.clone();
         let handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
             rt.block_on(async move {
                 let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 tx.send(l.local_addr().unwrap()).unwrap();
                 // No automatic scan loop in tests (interval 0 still scans once; fine).
-                susic_server::serve(st, l, async { let _ = stop_rx.await; }).await.unwrap();
+                susic_server::serve(st, l, async {
+                    let _ = stop_rx.await;
+                })
+                .await
+                .unwrap();
             });
         });
         let addr = rx.recv().unwrap();
         // serve() performs one scan at startup; let it finish so tests are deterministic.
         for _ in 0..500 {
-            if state.last_scan.lock().unwrap().is_some() || state.last_scan_error.lock().unwrap().is_some() {
+            if state.last_scan.lock().unwrap().is_some()
+                || state.last_scan_error.lock().unwrap().is_some()
+            {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        Fixture { base: format!("http://{addr}"), state, music, root, _rt: handle, stop }
+        Fixture {
+            base: format!("http://{addr}"),
+            state,
+            music,
+            root,
+            _rt: handle,
+            stop,
+        }
     }
     fn scan(&self) -> susic_server::scan::ScanReport {
         // The serve() loop may be scanning concurrently; wait for it.
@@ -91,7 +109,9 @@ impl Fixture {
         r["token"].as_str().unwrap().to_string()
     }
     fn get(&self, path: &str, token: &str) -> Result<ureq::Response, ureq::Error> {
-        ureq::get(&format!("{}{}", self.base, path)).set("Authorization", &format!("Bearer {token}")).call()
+        ureq::get(&format!("{}{}", self.base, path))
+            .set("Authorization", &format!("Bearer {token}"))
+            .call()
     }
     fn shutdown(self) {
         let _ = self.stop.send(());
@@ -101,14 +121,21 @@ impl Fixture {
 }
 
 fn library(f: &Fixture, token: &str) -> serde_json::Value {
-    f.get("/api/v1/library", token).unwrap().into_json().unwrap()
+    f.get("/api/v1/library", token)
+        .unwrap()
+        .into_json()
+        .unwrap()
 }
 
 #[test]
 fn auth_pairing_and_health() {
     let f = Fixture::start("auth");
     // Health is public and minimal.
-    let h: serde_json::Value = ureq::get(&format!("{}/health", f.base)).call().unwrap().into_json().unwrap();
+    let h: serde_json::Value = ureq::get(&format!("{}/health", f.base))
+        .call()
+        .unwrap()
+        .into_json()
+        .unwrap();
     assert_eq!(h["status"], "ok");
     // Library requires a token.
     match ureq::get(&format!("{}/api/v1/library", f.base)).call() {
@@ -116,24 +143,45 @@ fn auth_pairing_and_health() {
         other => panic!("expected 401, got {other:?}"),
     }
     // Wrong pairing code rejected.
-    match ureq::post(&format!("{}/api/v1/pair", f.base)).send_json(serde_json::json!({"code":"NOPE-NOPE","device_name":"x"})) {
+    match ureq::post(&format!("{}/api/v1/pair", f.base))
+        .send_json(serde_json::json!({"code":"NOPE-NOPE","device_name":"x"}))
+    {
         Err(ureq::Error::Status(403, _)) => {}
         other => panic!("expected 403, got {other:?}"),
     }
     let token = f.pair();
     assert!(f.get("/api/v1/status", &token).is_ok());
     // Query-string token (for media players that cannot set headers).
-    assert!(ureq::get(&format!("{}/api/v1/status?access_token={token}", f.base)).call().is_ok());
+    assert!(
+        ureq::get(&format!("{}/api/v1/status?access_token={token}", f.base))
+            .call()
+            .is_ok()
+    );
     // A pairing code is single-use.
     let code = susic_server::issue_pair_code(&f.state, Duration::from_secs(60)).unwrap();
     let body = serde_json::json!({"code": code, "device_name": "a"});
-    assert!(ureq::post(&format!("{}/api/v1/pair", f.base)).send_json(body.clone()).is_ok());
-    assert!(matches!(ureq::post(&format!("{}/api/v1/pair", f.base)).send_json(body), Err(ureq::Error::Status(403, _))));
+    assert!(ureq::post(&format!("{}/api/v1/pair", f.base))
+        .send_json(body.clone())
+        .is_ok());
+    assert!(matches!(
+        ureq::post(&format!("{}/api/v1/pair", f.base)).send_json(body),
+        Err(ureq::Error::Status(403, _))
+    ));
     // Revocation takes effect immediately.
-    let devices: serde_json::Value = f.get("/api/v1/devices", &token).unwrap().into_json().unwrap();
+    let devices: serde_json::Value = f
+        .get("/api/v1/devices", &token)
+        .unwrap()
+        .into_json()
+        .unwrap();
     let id = devices["devices"][0]["id"].as_i64().unwrap();
-    ureq::delete(&format!("{}/api/v1/devices/{id}", f.base)).set("Authorization", &format!("Bearer {token}")).call().unwrap();
-    assert!(matches!(f.get("/api/v1/status", &token), Err(ureq::Error::Status(401, _))));
+    ureq::delete(&format!("{}/api/v1/devices/{id}", f.base))
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+        .unwrap();
+    assert!(matches!(
+        f.get("/api/v1/status", &token),
+        Err(ureq::Error::Status(401, _))
+    ));
     f.shutdown();
 }
 
@@ -154,7 +202,9 @@ fn scan_stream_range_and_artwork_lookup() {
     let size = one["size_bytes"].as_i64().unwrap();
 
     // Full download.
-    let full = f.get(&format!("/api/v1/tracks/{id}/stream"), &token).unwrap();
+    let full = f
+        .get(&format!("/api/v1/tracks/{id}/stream"), &token)
+        .unwrap();
     assert_eq!(full.header("Accept-Ranges"), Some("bytes"));
     let mut body = Vec::new();
     std::io::copy(&mut full.into_reader(), &mut body).unwrap();
@@ -168,13 +218,19 @@ fn scan_stream_range_and_artwork_lookup() {
         .call()
         .unwrap();
     assert_eq!(part.status(), 206);
-    assert!(part.header("Content-Range").unwrap().starts_with("bytes 1000-1999/"));
+    assert!(part
+        .header("Content-Range")
+        .unwrap()
+        .starts_with("bytes 1000-1999/"));
     let mut chunk = Vec::new();
     std::io::copy(&mut part.into_reader(), &mut chunk).unwrap();
     assert_eq!(chunk, body[1000..2000]);
 
     // Unknown track.
-    assert!(matches!(f.get("/api/v1/tracks/9999/stream", &token), Err(ureq::Error::Status(404, _))));
+    assert!(matches!(
+        f.get("/api/v1/tracks/9999/stream", &token),
+        Err(ureq::Error::Status(404, _))
+    ));
     f.shutdown();
 }
 
@@ -189,7 +245,14 @@ fn detects_new_moved_changed_and_deleted_files() {
     let token = f.pair();
     let lib = library(&f, &token);
     let rev0 = lib["revision"].as_i64().unwrap();
-    let id_a = lib["tracks"].as_array().unwrap().iter().find(|t| t["title"] == "a").unwrap()["id"].as_i64().unwrap();
+    let id_a = lib["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["title"] == "a")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     // Favourite + playlist reference a.
     ureq::put(&format!("{}/api/v1/tracks/{id_a}/favourite", f.base))
@@ -207,17 +270,40 @@ fn detects_new_moved_changed_and_deleted_files() {
     let r = f.scan();
     assert_eq!((r.moved, r.added, r.removed), (1, 0, 0), "{r:?}");
     let lib = library(&f, &token);
-    let t = lib["tracks"].as_array().unwrap().iter().find(|t| t["id"] == id_a).expect("id preserved across move");
+    let t = lib["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == id_a)
+        .expect("id preserved across move");
     assert_eq!(t["favourite"], true);
 
     // Delete b.wav: it is reported as removed in the delta.
-    let id_b = library(&f, &token)["tracks"].as_array().unwrap().iter().find(|t| t["title"] == "b").unwrap()["id"].as_i64().unwrap();
+    let id_b = library(&f, &token)["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["title"] == "b")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
     std::fs::remove_file(f.music.join("b.wav")).unwrap();
     let r = f.scan();
     assert_eq!(r.removed, 1);
-    let delta: serde_json::Value = f.get(&format!("/api/v1/library?since={rev0}"), &token).unwrap().into_json().unwrap();
-    assert!(delta["removed"].as_array().unwrap().iter().any(|v| v == id_b));
-    assert!(matches!(f.get(&format!("/api/v1/tracks/{id_b}/stream"), &token), Err(ureq::Error::Status(404, _))));
+    let delta: serde_json::Value = f
+        .get(&format!("/api/v1/library?since={rev0}"), &token)
+        .unwrap()
+        .into_json()
+        .unwrap();
+    assert!(delta["removed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v == id_b));
+    assert!(matches!(
+        f.get(&format!("/api/v1/tracks/{id_b}/stream"), &token),
+        Err(ureq::Error::Status(404, _))
+    ));
     f.shutdown();
 }
 
@@ -262,14 +348,25 @@ fn playlists_sync_last_writer_wins() {
         other => panic!("expected 409, got {other:?}"),
     }
     assert!(put("Road trip 2", vec![1, 1], 200).is_ok());
-    let list: serde_json::Value = f.get("/api/v1/playlists", &token).unwrap().into_json().unwrap();
+    let list: serde_json::Value = f
+        .get("/api/v1/playlists", &token)
+        .unwrap()
+        .into_json()
+        .unwrap();
     assert_eq!(list["playlists"][0]["name"], "Road trip 2");
-    assert_eq!(list["playlists"][0]["track_ids"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        list["playlists"][0]["track_ids"].as_array().unwrap().len(),
+        2
+    );
     ureq::delete(&format!("{}/api/v1/playlists/pl-1", f.base))
         .set("Authorization", &format!("Bearer {token}"))
         .call()
         .unwrap();
-    let list: serde_json::Value = f.get("/api/v1/playlists", &token).unwrap().into_json().unwrap();
+    let list: serde_json::Value = f
+        .get("/api/v1/playlists", &token)
+        .unwrap()
+        .into_json()
+        .unwrap();
     assert_eq!(list["playlists"][0]["deleted"], true);
     f.shutdown();
 }
