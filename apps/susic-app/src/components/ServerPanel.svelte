@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { api, type CacheInfo, type ServerDevice, type ServerStatus } from '../lib/api';
   import { app } from '../lib/store.svelte';
   import { fmtBytes, plural } from '../lib/format';
@@ -23,7 +24,8 @@
       devices = (await api.serverDevices().catch(() => ({ devices: [] }))).devices;
     } else { status = null; devices = []; }
   }
-  $effect(() => { app.server.online; app.server.configured; app.libraryVersion; void refresh(); });
+  // Re-run only on connectivity/library changes; refresh() itself writes app.server, so untrack it.
+  $effect(() => { app.server.online; app.server.configured; app.libraryVersion; untrack(() => { void refresh(); }); });
 
   async function connect() {
     busy = true; err = '';

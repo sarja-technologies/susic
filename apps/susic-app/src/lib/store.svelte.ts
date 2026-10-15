@@ -63,6 +63,8 @@ class AppStore {
 
   async init() {
     this.platform = await api.platform();
+    // The Android WebView is edge-to-edge but often reports a 0 top inset: keep content below the status bar.
+    if (this.platform === 'android') document.documentElement.style.setProperty('--safe-top', 'max(env(safe-area-inset-top, 0px), 28px)');
     const mq = window.matchMedia('(max-width: 760px)');
     this.narrow = mq.matches;
     mq.addEventListener('change', (e) => (this.narrow = e.matches));
@@ -128,7 +130,11 @@ class AppStore {
     const list = i.type === 'album' && i.sub ? tracks.filter((t) => (t.album_artist || t.artist) === i.sub || t.artist === i.sub) : tracks;
     this.play(list.length ? list : tracks);
   }
-  async refreshServer() { this.server = await api.serverInfo(); }
+  async refreshServer() {
+    const s = await api.serverInfo();
+    const c = this.server;
+    if (s.configured !== c.configured || s.online !== c.online || s.url !== c.url || s.name !== c.name || s.device_name !== c.device_name) this.server = s;
+  }
 
   /** How a track can be played right now. */
   availability(t: Track): { kind: 'local' | 'both' | 'server' | 'downloaded' | 'unavailable'; label: string } {

@@ -266,3 +266,33 @@ fn playlist_deletion_leaves_tombstone_only_when_synced() {
     l.delete_playlist(p2).unwrap();
     assert_eq!(l.take_playlist_tombstones().unwrap()[0].0, "uid-2");
 }
+
+/// Scale check (run with `cargo test -p susic-library --release -- --ignored --nocapture`).
+#[test]
+#[ignore]
+fn bench_large_library() {
+    let l = Library::open_memory().unwrap();
+    let t0 = std::time::Instant::now();
+    for i in 0..50_000 {
+        l.upsert_track(&nt(
+            &format!("Song number {i}"),
+            &format!("Artist {}", i % 900),
+            &format!("Album {}", i % 4000),
+            &format!("/m/{i}.mp3"),
+            &format!("h{i}"),
+        ))
+        .unwrap();
+    }
+    println!("insert 50k: {:?}", t0.elapsed());
+    let t = std::time::Instant::now();
+    let r = l
+        .list_tracks(&TrackQuery { search: Some("number 4999".into()), ..Default::default() })
+        .unwrap();
+    println!("search ({} hits): {:?}", r.len(), t.elapsed());
+    let t = std::time::Instant::now();
+    let all = l.list_tracks(&TrackQuery::default()).unwrap();
+    println!("list all {}: {:?}", all.len(), t.elapsed());
+    let t = std::time::Instant::now();
+    let a = l.albums(None).unwrap();
+    println!("albums {}: {:?}", a.len(), t.elapsed());
+}

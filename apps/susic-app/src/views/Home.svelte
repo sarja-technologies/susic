@@ -140,7 +140,7 @@
   :global(.mobile) .c { width: 140px; }
   .small { padding: 5px 12px; font-size: 12px; }
   .dial { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-  :global(.mobile) .dial { grid-template-columns: repeat(2, 1fr); }
+  :global(.mobile) .dial { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .tile { display: flex; align-items: center; background: var(--surface); border-radius: 12px; overflow: hidden; transition: background .15s, box-shadow .15s; }
   .tile:hover { background: var(--surface-2); box-shadow: var(--shadow-sm); }
   .tp { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; }

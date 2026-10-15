@@ -9,7 +9,11 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        session = MediaSession.Builder(this, PlayerHub.sessionPlayer(this)).build()
+        val s = MediaSession.Builder(this, PlayerHub.sessionPlayer(this)).build()
+        session = s
+        // Register with the notification manager even when no MediaController is bound,
+        // otherwise no notification (and no foreground state) is ever posted.
+        addSession(s)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
