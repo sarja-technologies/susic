@@ -23,6 +23,6 @@
 <style>
   .cover { flex: none; overflow: hidden; background: var(--surface-2); aspect-ratio: 1; }
   img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .ph { width: 100%; height: 100%; display: grid; place-items: center; color: rgba(255,255,255,.55);
-    background: linear-gradient(135deg, hsl(var(--h) 55% 38%), hsl(calc(var(--h) + 30) 50% 18%)); }
+  .ph { width: 100%; height: 100%; display: grid; place-items: center; color: hsl(var(--h) 55% 38%);
+    background: linear-gradient(135deg, hsl(var(--h) 80% 93%), hsl(calc(var(--h) + 12) 70% 86%)); }
 </style>

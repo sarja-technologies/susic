@@ -47,7 +47,7 @@
 
 <style>
   .bar { height: var(--player-h); display: grid; grid-template-columns: minmax(200px, 1fr) minmax(320px, 1.4fr) minmax(200px, 1fr);
-    align-items: center; gap: 18px; padding: 0 18px; background: rgba(18, 16, 27, .86); backdrop-filter: blur(18px);
+    align-items: center; gap: 18px; padding: 0 18px; background: var(--bg-elev);
     border-top: 1px solid var(--line); }
   .np { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .cover { border-radius: 8px; transition: transform .15s; display: block; }

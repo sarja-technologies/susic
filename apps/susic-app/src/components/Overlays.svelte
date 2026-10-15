@@ -136,7 +136,7 @@
   .toast { position: fixed; z-index: 120; left: 50%; transform: translateX(-50%); bottom: calc(var(--player-h) + var(--safe-bottom) + 18px);
     background: var(--surface-3); padding: 11px 18px; border-radius: 999px; box-shadow: var(--shadow); max-width: min(560px, 90vw);
     animation: pop .18s ease-out; font-weight: 500; }
-  .toast.error { background: #4a1d24; color: #ffd0d0; }
+  .toast.error { background: #FDE7E4; color: #8A1C12; border: 1px solid #F3B8B0; }
   :global(.mobile) .toast { bottom: calc(var(--player-h) + var(--nav-h) + var(--safe-bottom) + 14px); }
   @keyframes fade { from { opacity: 0 } }
   @keyframes pop { from { opacity: 0; transform: translate(var(--tx, 0), 6px) scale(.98) } }

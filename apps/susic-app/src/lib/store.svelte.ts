@@ -1,4 +1,4 @@
-import { api, on, type PlayerState, type QueueView, type Track, type Playlist } from './api';
+import { api, on, type PlayerState, type QueueView, type Track, type Playlist, type ServerInfo } from './api';
 import { open } from '@tauri-apps/plugin-dialog';
 
 export type Route = { name: string; id?: string; extra?: string };
@@ -20,6 +20,9 @@ class AppStore {
   importProgress = $state<{ done: number; total: number } | null>(null);
   menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   dialog = $state<DialogSpec | null>(null);
+  server = $state<ServerInfo>({ configured: false, url: null, name: null, device_name: null, online: false, tracks: 0 });
+  syncing = $state(false);
+  downloading = $state<Record<number, number>>({});
   private toastTimer: number | undefined;
 
   get mobile() { return this.platform === 'android' || this.narrow; }
@@ -66,6 +69,8 @@ class AppStore {
     this.syncRoute();
     window.addEventListener('hashchange', () => this.syncRoute());
     this.settings = await api.settings();
+    this.applyTheme();
+    this.server = await api.serverInfo();
     this.player = await api.playerState();
     await Promise.all([this.refreshQueue(), this.refreshPlaylists()]);
 
@@ -91,12 +96,67 @@ class AppStore {
       if (s.failed.length) parts.push(`${s.failed.length} failed`);
       this.notify(`Import finished: ${parts.join(', ')}`, s.failed.length && !s.added ? 'error' : 'info');
     });
+    await on<{ online: boolean }>('server://state', (s) => (this.server = { ...this.server, online: s.online }));
+    await on<{ message: string }>('server://error', (e) => this.notify(`Server: ${e.message}`, 'error'));
+    await on<{ id: number; done: number; total: number }>('download://progress', (p) => {
+      const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
+      this.downloading = { ...this.downloading, [p.id]: pct };
+      if (pct >= 100) { const d = { ...this.downloading }; delete d[p.id]; this.downloading = d; }
+    });
     await on('import://notify', (e: any) => this.notify(e.message));
+  }
+
+  applyTheme() {
+    const t = this.settings['theme'] || 'light';
+    document.documentElement.dataset.theme = t;
+  }
+  // ---- speed dial (pinned albums / artists / playlists on Home) ----
+  get speedDial(): SpeedDialItem[] {
+    try { const v = JSON.parse(this.settings['speed_dial'] || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+  }
+  isPinned(i: Pick<SpeedDialItem, 'type' | 'key'>) { return this.speedDial.some((d) => d.type === i.type && d.key === i.key); }
+  async togglePin(i: SpeedDialItem) {
+    const cur = this.speedDial;
+    const next = this.isPinned(i) ? cur.filter((d) => !(d.type === i.type && d.key === i.key)) : [...cur, i].slice(-12);
+    await this.saveSetting('speed_dial', JSON.stringify(next));
+    this.notify(this.isPinned(i) ? 'Pinned to Home' : 'Removed from Home');
+  }
+  async playCollection(i: SpeedDialItem) {
+    const tracks = i.type === 'album' ? await api.listTracks({ album: i.key, sort: 'track' })
+      : i.type === 'artist' ? await api.listTracks({ artist: i.key, sort: 'album' })
+      : await api.playlistTracks(Number(i.key));
+    const list = i.type === 'album' && i.sub ? tracks.filter((t) => (t.album_artist || t.artist) === i.sub || t.artist === i.sub) : tracks;
+    this.play(list.length ? list : tracks);
+  }
+  async refreshServer() { this.server = await api.serverInfo(); }
+
+  /** How a track can be played right now. */
+  availability(t: Track): { kind: 'local' | 'both' | 'server' | 'downloaded' | 'unavailable'; label: string } {
+    switch (t.availability) {
+      case 'local': return { kind: 'local', label: 'Stored on this device' };
+      case 'local+server': return { kind: 'both', label: 'On this device and your server' };
+      case 'downloaded': return { kind: 'downloaded', label: 'Downloaded for offline' };
+      default:
+        return this.server.online
+          ? { kind: 'server', label: 'On your server (streams when played)' }
+          : { kind: 'unavailable', label: 'Unavailable — server offline. Download songs to listen offline.' };
+    }
+  }
+  async download(tracks: Track[]) {
+    const ids = tracks.filter((t) => t.availability === 'server').map((t) => t.id);
+    if (!ids.length) { this.notify('Nothing to download — these songs are already on this device.'); return; }
+    this.notify(`Downloading ${ids.length === 1 ? tracks.find((t) => t.id === ids[0])!.title : ids.length + ' songs'}…`);
+    try { await api.download(ids); this.notify('Download complete'); }
+    catch (e) { this.notify(String(e), 'error'); }
   }
 
   // ---- actions ----
   play(tracks: Track[], start = 0, shuffle?: boolean) {
     if (!tracks.length) return;
+    const t = tracks[start];
+    if (t && t.availability === 'server' && this.server.configured && !this.server.online) {
+      this.notify('Your server is offline. Download songs to play them offline.', 'error');
+    }
     void api.playTracks(tracks.map((t) => t.id), start, shuffle);
   }
   playNext(tracks: Track[]) { void api.queueAdd(tracks.map((t) => t.id), true); this.notify(`Playing next: ${label(tracks)}`); }
@@ -133,6 +193,7 @@ class AppStore {
   }
 }
 
+export interface SpeedDialItem { type: 'album' | 'artist' | 'playlist'; key: string; title: string; sub?: string; art?: string | null }
 export interface MenuItem { label: string; action: () => void; danger?: boolean; separator?: boolean }
 export type DialogSpec =
   | { kind: 'playlist-picker'; trackIds: number[] }

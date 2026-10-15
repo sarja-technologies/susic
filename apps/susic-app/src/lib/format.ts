@@ -39,5 +39,5 @@ export function activeLine(times: (number | null)[], posMs: number): number {
 export function hueFor(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return 250 + (h % 50); // violet band only
+  return 8 + (h % 44); // warm band only (red-orange → amber)
 }

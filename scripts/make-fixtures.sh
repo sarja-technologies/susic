@@ -11,7 +11,7 @@ gen() { # file freq secs title artist album track [cover]
     -metadata track="$track" -metadata date=2024 -metadata album_artist="$artist" "$f"
 }
 cover() { ffmpeg -y -loglevel error -f lavfi -i "color=c=$2:s=600x600:d=1" -frames:v 1 "$1"; }
-cover "$OUT/c1.jpg" 0x7c3aed; cover "$OUT/c2.jpg" 0x2563eb
+cover "$OUT/c1.jpg" 0xe8590c; cover "$OUT/c2.jpg" 0x2b8a3e
 A="$OUT/Synth Artist/Test Album One"; B="$OUT/Tone Duo/Second Album"
 ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=261:duration=30" -i "$OUT/c1.jpg" -map 0 -map 1 -c:a libmp3lame -id3v2_version 3 \
   -metadata title="Tone C4" -metadata artist="Synth Artist" -metadata album="Test Album One" -metadata track=1 -metadata date=2024 \

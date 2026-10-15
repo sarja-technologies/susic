@@ -8,13 +8,13 @@
   import Icon from '../components/Icon.svelte';
   import { openMenu, trackMenu } from '../lib/menus';
 
-  let { scrollEl, title, layout: initial }: { scrollEl: HTMLElement | null; title: string; layout: 'grid' | 'list' } = $props();
+  let { scrollEl, title, layout: initial, favourites = false }: { scrollEl: HTMLElement | null; title: string; layout: 'grid' | 'list'; favourites?: boolean } = $props();
   let tracks = $state<Track[]>([]);
   let search = $state('');
   let sort = $state(app.setting('sort', 'title'));
   let desc = $state(false);
   let layout = $state<'grid' | 'list'>(initial);
-  let favOnly = $state(false);
+  let favOnly = $state(favourites);
   let loaded = $state(false);
 
   async function load() {

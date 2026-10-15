@@ -28,10 +28,10 @@
 <style>
   .ctl { display: flex; align-items: center; gap: 6px; }
   .ctl.lg { gap: 14px; }
-  .play { width: 44px; height: 44px; border-radius: 50%; background: var(--text); color: #0a0910; display: grid; place-items: center;
+  .play { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center;
     transition: transform .1s, background .15s; }
   .lg .play { width: 68px; height: 68px; }
-  .play:hover { transform: scale(1.06); }
+  .play:hover { transform: scale(1.06); background: var(--accent-strong); }
   .play:active { transform: scale(.94); }
   .play[disabled], .icon-btn[disabled] { opacity: .4; pointer-events: none; }
 </style>
