@@ -61,6 +61,13 @@ const MIGRATIONS: &[&str] = &[
         message TEXT NOT NULL DEFAULT '',
         created_at INTEGER NOT NULL
     );",
+    // 3: Susic server integration (unified local + server library)
+    "ALTER TABLE tracks ADD COLUMN remote_id INTEGER;
+     ALTER TABLE tracks ADD COLUMN cache_path TEXT;
+     ALTER TABLE tracks ADD COLUMN cache_pinned INTEGER NOT NULL DEFAULT 0;
+     CREATE INDEX idx_tracks_remote ON tracks(remote_id);
+     ALTER TABLE playlists ADD COLUMN remote_uid TEXT;
+     CREATE TABLE playlist_tombstones (uid TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);",
 ];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {

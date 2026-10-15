@@ -18,3 +18,21 @@ Partial / caveats:
 - Transfer works only on the same LAN; the sender keeps one session per pairing code.
 - YouTube search needs your own Data API key and is subject to your quota and YouTube's developer policies.
 - Equal-title tracks by the same artist with identical audio content are treated as duplicates.
+
+## Added in 0.2.0
+
+* One server connection at a time. Credentials are not encrypted at rest (file mode `0600`).
+* Server transport is plain HTTP; use Tailscale or `tailscale serve`. No built-in TLS.
+* Playlist sync is last-writer-wins per playlist; songs that exist only on a device are kept locally
+  but are not uploaded. Deleting a server track removes it from clients unless it was downloaded.
+* Server tag edits and album-art replacement are not supported from clients; edit tags with your
+  usual tagger and rescan.
+* The server indexes at most what `lofty` can read; unsupported or corrupt files are skipped and
+  listed in the scan log.
+* YouTube results are discovery-only by design ([docs/YOUTUBE.md](YOUTUBE.md)); there is no in-app
+  YouTube playback.
+* Outage auto-resume is implemented and the reconnecting reader is integration-tested, but the full
+  "network drops mid-song → UI resumes" path has not been exercised end to end on a device.
+* Android: lock-screen/Bluetooth/call-interruption and real-device behaviour are unverified
+  ([docs/ANDROID.md](ANDROID.md)). Android runs on x86_64 emulator only so far.
+* Gapless playback and ReplayGain are not implemented.

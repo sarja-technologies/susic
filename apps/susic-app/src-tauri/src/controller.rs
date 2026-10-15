@@ -45,6 +45,11 @@ pub struct Controller {
     /// Position to seek to when the restored track is first played.
     pending_restore: Mutex<Option<i64>>,
     pub media_session: Mutex<Option<SessionHook>>,
+    /// Paired Susic server, if any (see `server.rs`).
+    pub server: Mutex<Option<susic_client::Server>>,
+    pub server_online: AtomicBool,
+    /// Bumped on every explicit load so stale outage-retries cancel themselves.
+    load_gen: std::sync::atomic::AtomicU64,
 }
 
 impl Controller {
@@ -74,6 +79,9 @@ impl Controller {
             last_save: AtomicI64::new(0),
             pending_restore: Mutex::new(None),
             media_session: Mutex::new(None),
+            server: Mutex::new(None),
+            server_online: AtomicBool::new(false),
+            load_gen: std::sync::atomic::AtomicU64::new(0),
         });
         Ok(c)
     }
@@ -142,12 +150,17 @@ impl Controller {
                 }
             }
             EngineEvent::Error(e) => {
-                {
+                let (resume_id, pos, was_playing) = {
                     let mut s = self.state.lock().unwrap();
+                    let r = (s.track_id, s.position_ms, s.playing);
                     s.playing = false;
                     s.error = Some(e.clone());
-                }
+                    r
+                };
                 self.emit("player://error", json!({ "message": e }));
+                if let Some(id) = resume_id {
+                    self.schedule_stream_resume(id, pos, was_playing, &e);
+                }
             }
             EngineEvent::Remote(cmd) => match cmd {
                 RemoteCommand::Play => self.play(),
@@ -158,6 +171,45 @@ impl Controller {
                 RemoteCommand::Stop => self.pause(),
             },
         }
+    }
+
+    /// A streamed track failed (server restarted, Wi-Fi dropped, VPN flapped).
+    /// Poll the server for up to two minutes and resume from the same position.
+    fn schedule_stream_resume(self: &Arc<Self>, id: i64, pos: i64, was_playing: bool, err: &str) {
+        let streamed = self
+            .with_lib(|l| l.get_track(id))
+            .ok()
+            .flatten()
+            .map(|t| {
+                t.remote_id.is_some()
+                    && !matches!(self.resolve_playable(&t), Ok(p) if !p.starts_with("http"))
+            })
+            .unwrap_or(false);
+        if !streamed
+            || !(err.contains("reach server") || err.contains("onnection") || err.contains("HTTP"))
+        {
+            return;
+        }
+        let gen = self.load_gen.load(Ordering::SeqCst);
+        let me = self.clone();
+        std::thread::spawn(move || {
+            for _ in 0..40 {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if me.load_gen.load(Ordering::SeqCst) != gen {
+                    return; // user moved on
+                }
+                let base = me.server.lock().unwrap().as_ref().map(|s| s.base.clone());
+                let Some(base) = base else { return };
+                if susic_client::health(&base).is_ok() {
+                    me.server_online.store(true, Ordering::Relaxed);
+                    me.emit("server://state", json!({ "online": true }));
+                    me.start_track(id, pos, was_playing);
+                    return;
+                }
+                me.server_online.store(false, Ordering::Relaxed);
+                me.emit("server://state", json!({ "online": false }));
+            }
+        });
     }
 
     fn maybe_count_play(&self, s: &PlayerState) {
@@ -191,13 +243,17 @@ impl Controller {
                 return;
             }
         };
-        if !std::path::Path::new(&track.path).exists() {
-            self.on_engine_event(EngineEvent::Error(format!(
-                "File not found: {}",
-                track.path
-            )));
-            self.emit("queue://changed", json!({}));
-            return;
+        let play_path = match self.resolve_playable(&track) {
+            Ok(p) => p,
+            Err(msg) => {
+                self.on_engine_event(EngineEvent::Error(msg));
+                self.emit("queue://changed", json!({}));
+                return;
+            }
+        };
+        self.load_gen.fetch_add(1, Ordering::SeqCst);
+        if play_path.starts_with("http") && track.remote_id.is_some() {
+            crate::server::maybe_auto_cache(self, id);
         }
         self.counted.store(false, Ordering::Relaxed);
         {
@@ -210,7 +266,8 @@ impl Controller {
         }
         self.engine().load(
             MediaInfo {
-                path: track.path.clone(),
+                path: play_path,
+                format: track.format.clone(),
                 title: track.title.clone(),
                 artist: track.artist.clone(),
                 album: track.album.clone(),
@@ -226,6 +283,27 @@ impl Controller {
         self.emit("player://track", serde_json::to_value(&track).unwrap());
         self.emit("queue://changed", json!({}));
         self.save_queue();
+    }
+
+    /// Decide where audio comes from. Preference order: a file on this device,
+    /// an offline copy of a server track, then a stream from the server.
+    pub fn resolve_playable(&self, t: &Track) -> Result<String, String> {
+        let exists = |p: &str| p.starts_with("content://") || std::path::Path::new(p).exists();
+        if t.source != "server" && exists(&t.path) {
+            return Ok(t.path.clone());
+        }
+        if let Some(c) = &t.cache_path {
+            if exists(c) {
+                return Ok(c.clone());
+            }
+        }
+        if let Some(rid) = t.remote_id {
+            if let Some(srv) = self.server.lock().unwrap().as_ref() {
+                return Ok(srv.stream_url(rid));
+            }
+            return Err("This song is only on your Susic server, which isn't connected".into());
+        }
+        Err(format!("File not found: {}", t.path))
     }
 
     pub fn play_tracks(self: &Arc<Self>, ids: Vec<i64>, start: usize, shuffle: Option<bool>) {

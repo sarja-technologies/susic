@@ -4,6 +4,7 @@
   import { fmtBytes, fmtDuration, plural } from '../lib/format';
   import { open } from '@tauri-apps/plugin-dialog';
   import Icon from '../components/Icon.svelte';
+  import ServerPanel from '../components/ServerPanel.svelte';
 
   let storage = $state<StorageInfo | null>(null);
   let folders = $state<string[]>([]);
@@ -29,6 +30,18 @@
 
 <div class="page">
   <h1>Settings</h1>
+
+  <section class="card">
+    <h2>Appearance</h2>
+    <div class="acts">
+      {#each [['light', 'Light'], ['dark', 'Dark'], ['system', 'Match system']] as [v, l]}
+        <button class="chip" class:active={app.setting('theme', 'light') === v} aria-pressed={app.setting('theme', 'light') === v}
+          onclick={async () => { await app.saveSetting('theme', v); app.applyTheme(); }}>{l}</button>
+      {/each}
+    </div>
+  </section>
+
+  <ServerPanel />
 
   <section class="card">
     <h2>Library</h2>
@@ -77,7 +90,7 @@
   <section class="card">
     <h2>YouTube discovery</h2>
     <label class="tg"><input type="checkbox" checked={yt} onchange={(e) => app.saveSetting('youtube_enabled', String(e.currentTarget.checked))} />
-      <span>Enable YouTube search in Search<br /><span class="faint small">Uses your own YouTube Data API key and counts against your quota. Results open in YouTube; Susic does not download or store them.</span></span></label>
+      <span>Enable YouTube search in Search<br /><span class="faint small">Uses your own YouTube Data API key and counts against your quota. Results are discovery-only catalogue entries that open in YouTube; Susic does not play, download or store them.</span></span></label>
     {#if yt}
       <input class="field" type="password" placeholder="YouTube Data API key" bind:value={ytKey} aria-label="YouTube Data API key"
         onchange={() => app.saveSetting('youtube_api_key', ytKey.trim())} autocomplete="off" />
@@ -93,7 +106,7 @@
 
   <section class="card">
     <h2>About</h2>
-    <p class="muted">Susic 0.1.0 · Offline-first. No account, no telemetry, no cloud.</p>
+    <p class="muted">Susic 0.2.0 · Local-first. No account, no telemetry. The server is optional and self-hosted.</p>
   </section>
 </div>
 

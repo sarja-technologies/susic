@@ -59,6 +59,12 @@
           <div class="sub ellipsis">{t.artist}{#if app.mobile && showAlbum && t.album} · {t.album}{/if}</div>
         </div>
         {#if showAlbum && !app.mobile}<div class="album ellipsis muted">{t.album}</div>{/if}
+        {#if true}
+          {@const av = app.availability(t)}
+          <span class="av {av.kind}" title={av.label} role="img" aria-label={av.label}>
+            <Icon name={av.kind === 'local' ? 'device' : av.kind === 'both' ? 'check' : av.kind === 'downloaded' ? 'download-done' : av.kind === 'server' ? 'cloud' : 'cloud-off'} size={16} />
+          </span>
+        {/if}
         <button class="icon-btn fav" class:on={t.favourite} aria-label={t.favourite ? 'Remove from favourites' : 'Add to favourites'}
           aria-pressed={t.favourite} onclick={(e) => { e.stopPropagation(); void app.toggleFavourite(t); }}>
           <Icon name="heart" size={18} fill={t.favourite} />
@@ -71,12 +77,16 @@
 </div>
 
 <style>
-  .row { display: grid; grid-template-columns: 52px minmax(0, 1.6fr) minmax(0, 1fr) 38px 52px 38px; align-items: center; gap: 10px;
+  .row { display: grid; grid-template-columns: 52px minmax(0, 1.6fr) minmax(0, 1fr) 22px 38px 52px 38px; align-items: center; gap: 10px;
     padding: 0 10px; border-radius: 10px; cursor: default; outline-offset: -2px; transition: background .12s; }
-  :global(.mobile) .row { grid-template-columns: 52px minmax(0, 1fr) 38px 38px; }
+  :global(.mobile) .row { grid-template-columns: 52px minmax(0, 1fr) 22px 38px 38px; }
   :global(.mobile) .row .dur { display: none; }
   .row:hover { background: var(--surface); }
   .row.playing .title { color: var(--accent-2); }
+  .av { display: grid; place-items: center; color: var(--text-3); }
+  .av.both, .av.downloaded { color: var(--accent-2); }
+  .av.unavailable { color: var(--danger); }
+  .row:has(.av.unavailable) .meta { opacity: .55; }
   .row.dragover { box-shadow: inset 0 2px 0 var(--accent); }
   .idx { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 6px; color: var(--text-2); }
   .num { font-variant-numeric: tabular-nums; }

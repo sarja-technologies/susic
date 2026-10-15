@@ -12,10 +12,10 @@
 <style>
   input { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; margin: 0; cursor: pointer; }
   input::-webkit-slider-runnable-track { height: var(--h); border-radius: 99px;
-    background: linear-gradient(to right, var(--text) var(--pct), rgba(255,255,255,.18) var(--pct)); }
+    background: linear-gradient(to right, var(--text) var(--pct), var(--surface-3) var(--pct)); }
   input:hover::-webkit-slider-runnable-track, input:focus-visible::-webkit-slider-runnable-track {
-    background: linear-gradient(to right, var(--accent-2) var(--pct), rgba(255,255,255,.22) var(--pct)); }
-  input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff;
+    background: linear-gradient(to right, var(--accent-2) var(--pct), var(--surface-3) var(--pct)); }
+  input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--text);
     margin-top: calc((var(--h) - 12px) / 2); opacity: 0; transition: opacity .12s; }
   input:hover::-webkit-slider-thumb, input:focus-visible::-webkit-slider-thumb, input:active::-webkit-slider-thumb { opacity: 1; }
   :global(.mobile) input::-webkit-slider-thumb { opacity: 1; }

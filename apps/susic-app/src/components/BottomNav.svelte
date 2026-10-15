@@ -9,7 +9,7 @@
     { id: 'more', label: 'More', icon: 'settings' },
   ];
   const active = $derived(
-    ['songs', 'albums', 'artists', 'album', 'artist'].includes(app.route.name) ? 'library'
+    ['songs', 'albums', 'artists', 'album', 'artist', 'favourites', 'offline'].includes(app.route.name) ? 'library'
       : app.route.name === 'playlist' ? 'playlists'
       : ['imports', 'settings', 'transfer'].includes(app.route.name) ? 'more' : app.route.name);
 </script>

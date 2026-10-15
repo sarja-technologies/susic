@@ -32,6 +32,13 @@ pub struct Track {
     pub hash: String,
     pub format: String,
     pub size_bytes: i64,
+    /// Id of this song on the paired Susic server, if it exists there.
+    pub remote_id: Option<i64>,
+    /// Offline copy of a server track (absolute path), if downloaded/cached.
+    pub cache_path: Option<String>,
+    pub cache_pinned: bool,
+    /// `local`, `local+server`, `server` or `downloaded`.
+    pub availability: String,
 }
 
 /// Metadata extracted from a file before it is stored.

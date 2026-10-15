@@ -84,7 +84,7 @@ object PlayerHub {
         run(ctx) { p ->
             val meta = MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album)
             if (!artwork.isNullOrEmpty()) meta.setArtworkUri(Uri.fromFile(File(artwork)))
-            val item = MediaItem.Builder().setUri(Uri.fromFile(File(path))).setMediaMetadata(meta.build()).build()
+            val item = MediaItem.Builder().setUri(if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("content://")) Uri.parse(path) else Uri.fromFile(File(path))).setMediaMetadata(meta.build()).build()
             error = null
             p.setMediaItem(item, startMs)
             p.prepare()

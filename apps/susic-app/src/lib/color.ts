@@ -2,9 +2,9 @@ import { artSrc } from './api';
 
 const cache = new Map<string, string>();
 
-/** Dominant vivid colour from artwork as an `r, g, b` triple; falls back to Susic violet. */
+/** Dominant vivid colour from artwork as an `r, g, b` triple; falls back to Susic orange. */
 export async function dominantColor(path: string | null | undefined): Promise<string> {
-  const fallback = '124, 58, 237';
+  const fallback = '255, 106, 19';
   if (!path) return fallback;
   const hit = cache.get(path);
   if (hit) return hit;

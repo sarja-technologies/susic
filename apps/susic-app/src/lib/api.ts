@@ -7,6 +7,9 @@ export interface Track {
   track_no: number | null; disc_no: number | null; year: number | null;
   added_at: number; play_count: number; last_played: number | null;
   favourite: boolean; has_lyrics: boolean; hash: string; format: string; size_bytes: number;
+  remote_id: number | null; cache_path: string | null; cache_pinned: boolean;
+  /** local | local+server | server | downloaded */
+  availability: 'local' | 'local+server' | 'server' | 'downloaded';
 }
 export interface AlbumSummary { album: string; artist: string; artwork: string | null; track_count: number; duration_ms: number; year: number | null; favourite_count: number }
 export interface ArtistSummary { artist: string; artwork: string | null; track_count: number; album_count: number }
@@ -27,6 +30,11 @@ export interface StorageInfo { library_bytes: number; artwork_cache_bytes: numbe
 export interface RemoteTrack { id: number; title: string; artist: string; album: string; album_artist: string; duration_ms: number; track_no: number | null; disc_no: number | null; year: number | null; size_bytes: number; hash: string; format: string; has_artwork: boolean }
 export interface Manifest { device: string; tracks: RemoteTrack[]; playlists: { name: string; track_ids: number[] }[] }
 export interface ShareInfo { code: string; host: string; port: number; uri: string; qr_svg: string }
+export interface ServerInfo { configured: boolean; url: string | null; name: string | null; device_name: string | null; online: boolean; tracks: number }
+export interface ServerStatus { name: string; version: string; tracks: number; bytes: number; revision: number; scanning: boolean }
+export interface CacheInfo { bytes: number; tracks: number; max_mb: number; auto: boolean }
+export interface ServerDevice { id: number; name: string; created_at: number; last_seen: number; revoked: boolean }
+export interface YtResult { id: string; title: string; channel: string; thumb: string }
 export interface ImportSummary { added: number; updated: number; duplicates: number; unchanged: number; failed: string[] }
 
 export const api = {
@@ -95,6 +103,19 @@ export const api = {
   syncConnect: (req: { host?: string; port?: number; code?: string; uri?: string }) => invoke<Manifest>('sync_connect', { req }),
   syncDisconnect: () => invoke<void>('sync_disconnect'),
   syncReceive: (req: { tracks: RemoteTrack[]; playlists: { name: string; track_ids: number[] }[] }) => invoke<void>('sync_receive', { req }),
+  serverInfo: () => invoke<ServerInfo>('server_info'),
+  serverConnect: (req: { url: string; code: string; device_name?: string }) => invoke<ServerInfo>('server_connect', { req }),
+  serverDisconnect: (keepDownloads: boolean) => invoke<void>('server_disconnect', { keepDownloads }),
+  serverSync: () => invoke<void>('server_sync'),
+  serverRescan: () => invoke<void>('server_rescan'),
+  serverStatus: () => invoke<ServerStatus>('server_status'),
+  serverDevices: () => invoke<{ devices: ServerDevice[] }>('server_devices'),
+  serverRevoke: (id: number) => invoke<void>('server_revoke_device', { id }),
+  download: (ids: number[]) => invoke<number>('download_tracks', { ids }),
+  removeDownloads: (ids: number[]) => invoke<void>('remove_downloads', { ids }),
+  clearDownloads: () => invoke<number>('clear_downloads'),
+  cacheStatus: () => invoke<CacheInfo>('cache_status'),
+  youtubeSearch: (query: string) => invoke<YtResult[]>('youtube_search', { query }),
   // Android-only
   pickAudio: () => invoke<string[]>('pick_audio'),
 };

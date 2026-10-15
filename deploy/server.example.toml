@@ -1,0 +1,20 @@
+# /etc/susic/server.toml — Susic server configuration.
+# Every value can also be set with a SUSIC_* environment variable
+# (SUSIC_BIND, SUSIC_MUSIC_DIR, SUSIC_DATA_DIR, SUSIC_SCAN_INTERVAL).
+
+# Address to listen on. Use your Tailscale IP (tailscale ip -4) or LAN IP.
+# "127.0.0.1:8484" is safest when fronting with `tailscale serve`.
+bind = "127.0.0.1:8484"
+
+# Where the music lives (the old SSD's mount point). Opened read-only in practice:
+# Susic never writes, renames or deletes files here.
+music_dir = "/srv/music"
+
+# Database and artwork thumbnails. Back this directory up (see docs/SERVER.md).
+data_dir = "/var/lib/susic"
+
+# Seconds between automatic rescans for new/moved/deleted files. 0 = scan once at start.
+scan_interval_secs = 300
+
+# Shown in clients.
+server_name = "Homelab Music"

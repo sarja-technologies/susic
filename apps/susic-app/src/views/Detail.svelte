@@ -78,6 +78,13 @@
         {#if kind === 'album' || kind === 'artist'}
           <button class="btn" disabled={!tracks.length} onclick={() => app.pickPlaylist(tracks.map((t) => t.id))}><Icon name="playlist" size={18} /> Add to playlist</button>
         {/if}
+        {#if (kind === 'album' || kind === 'artist' || plId !== undefined) && tracks.length}
+          {@const pin = { type: kind, key: id, title, sub: kind === 'album' ? artistName || undefined : undefined, art } as import('../lib/store.svelte').SpeedDialItem}
+          <button class="btn" onclick={() => app.togglePin(pin)}><Icon name="plus" size={18} /> {app.isPinned(pin) ? 'Unpin from Home' : 'Pin to Home'}</button>
+        {/if}
+        {#if tracks.some((t) => t.availability === 'server')}
+          <button class="btn" onclick={() => app.download(tracks)}><Icon name="download" size={18} /> Download</button>
+        {/if}
         {#if plId !== undefined}<button class="icon-btn" aria-label="Playlist actions" onclick={playlistMenu}><Icon name="more" /></button>{/if}
       </div>
     </div>

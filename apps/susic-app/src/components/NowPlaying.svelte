@@ -9,7 +9,7 @@
   import LyricsView from './LyricsView.svelte';
   import QueuePanel from './QueuePanel.svelte';
 
-  let rgb = $state('124, 58, 237');
+  let rgb = $state('255, 106, 19');
   let tab = $state<'lyrics' | 'queue'>('lyrics');
   const t = $derived(app.current);
   $effect(() => { const a = t?.artwork; void dominantColor(a).then((c) => (rgb = c)); });
@@ -65,13 +65,13 @@
 
 <style>
   .np { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
-    background: radial-gradient(120% 90% at 20% 0%, rgba(var(--rgb), .55), transparent 70%), linear-gradient(180deg, rgba(var(--rgb), .25), var(--bg) 85%), var(--bg);
+    background: linear-gradient(180deg, rgba(var(--rgb), .16), var(--bg) 70%), var(--bg);
     animation: up .28s cubic-bezier(.2, .8, .2, 1); transition: background .6s; }
   @keyframes up { from { transform: translateY(24px); opacity: 0 } }
   .top { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
   .body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.1fr); gap: 40px; padding: 0 48px 32px; }
   .left { display: flex; flex-direction: column; justify-content: center; gap: 18px; min-width: 0; max-width: 520px; margin: 0 auto; width: 100%; }
-  .art { width: min(100%, 46vh); aspect-ratio: 1; margin: 0 auto; box-shadow: 0 24px 60px rgba(0,0,0,.5); border-radius: 18px; }
+  .art { width: min(100%, 46vh); aspect-ratio: 1; margin: 0 auto; box-shadow: var(--shadow); border-radius: 18px; }
   .art :global(.cover) { width: 100% !important; height: 100% !important; }
   .info { display: flex; align-items: center; gap: 12px; }
   .titles { flex: 1; min-width: 0; }
@@ -79,7 +79,7 @@
   .a { color: var(--text-2); font-size: 16px; max-width: 100%; text-align: left; display: block; }
   .a:hover { text-decoration: underline; color: var(--text); }
   .controls { display: flex; justify-content: center; }
-  .right { display: flex; flex-direction: column; min-height: 0; background: rgba(0,0,0,.22); border-radius: 20px; backdrop-filter: blur(10px); }
+  .right { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: 20px; }
   .tabs { display: flex; gap: 8px; padding: 14px 14px 4px; }
   .pane { flex: 1; min-height: 0; }
   .np.mobile .body { grid-template-columns: 1fr; padding: 0 22px 24px; gap: 0; }

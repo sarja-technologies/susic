@@ -21,6 +21,8 @@
   import Imports from './views/Imports.svelte';
   import Settings from './views/Settings.svelte';
   import Transfer from './views/Transfer.svelte';
+  import Offline from './views/Offline.svelte';
+  import LibraryTabs from './components/LibraryTabs.svelte';
 
   let scrollEl = $state<HTMLElement | null>(null);
   let ready = $state(false);
@@ -68,10 +70,13 @@
             <button class="btn ghost" onclick={() => api.cancelImport()}>Cancel</button>
           </div>
         {/if}
+        {#if app.mobile && ['library', 'songs', 'albums', 'artists', 'favourites', 'offline'].includes(app.route.name)}<LibraryTabs />{/if}
         {#key app.route.name + (app.route.id ?? '')}
           {#if app.route.name === 'home'}<Home />
           {:else if app.route.name === 'search'}<Search {scrollEl} />
           {:else if app.route.name === 'library'}<SongBrowser {scrollEl} title="Library" layout="grid" />
+          {:else if app.route.name === 'favourites'}<SongBrowser {scrollEl} title="Favourites" layout="list" favourites />
+          {:else if app.route.name === 'offline'}<Offline {scrollEl} />
           {:else if app.route.name === 'songs'}<SongBrowser {scrollEl} title="Songs" layout="list" />
           {:else if app.route.name === 'albums'}<Albums {scrollEl} />
           {:else if app.route.name === 'artists'}<Artists {scrollEl} />
@@ -116,7 +121,7 @@
   .shell { height: 100%; display: flex; flex-direction: column; }
   .cols { flex: 1; min-height: 0; display: flex; }
   main { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; position: relative; padding-top: var(--safe-top);
-    background: radial-gradient(900px 400px at 70% -10%, rgba(139, 92, 246, .13), transparent 70%), var(--bg); }
+    background: var(--bg); }
   .panel { width: 380px; flex: none; border-left: 1px solid var(--line); background: var(--bg-elev); min-height: 0; display: flex; flex-direction: column; }
   .importbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 8px 16px;
     background: var(--surface-2); font-size: 13px; }

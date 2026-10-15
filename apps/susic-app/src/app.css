@@ -1,28 +1,49 @@
 :root {
-  --bg: #0a0910;
-  --bg-elev: #12101b;
-  --surface: #181523;
-  --surface-2: #211d31;
-  --surface-3: #2b2641;
-  --line: rgba(255, 255, 255, 0.07);
-  --text: #f4f1fb;
-  --text-2: #b4adc9;
-  --text-3: #7f7899;
-  --accent: #8b5cf6;
-  --accent-2: #a78bfa;
-  --accent-strong: #7c3aed;
-  --danger: #f87171;
-  --ok: #4ade80;
+  /* Susic identity: warm white surfaces, charcoal type, one orange accent. */
+  --bg: #FFFDFA;
+  --bg-elev: #FAF6F0;
+  --surface: #F6F0E8;
+  --surface-2: #EEE6DB;
+  --surface-3: #E3D9CB;
+  --line: rgba(38, 33, 28, 0.10);
+  --text: #26211C;
+  --text-2: #5C534A;
+  --text-3: #837869;
+  --accent: #FF6A13;
+  --accent-2: #C24400;      /* accent for text/icons on light surfaces (AA contrast) */
+  --accent-strong: #E85A00;
+  --accent-soft: #FFE9DA;
+  --on-accent: #1E1814;
+  --danger: #C62828;
+  --ok: #2E7D32;
   --radius: 14px;
   --radius-sm: 8px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow: 0 10px 28px rgba(60, 40, 20, 0.16);
+  --shadow-sm: 0 2px 8px rgba(60, 40, 20, 0.10);
   --player-h: 88px;
   --nav-h: 58px;
-  --sidebar-w: 236px;
+  --sidebar-w: 244px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', 'Ubuntu', sans-serif;
+  color-scheme: light;
+}
+/* Optional dark theme (Settings → Appearance). Light is the default. */
+:root[data-theme='dark'] {
+  --bg: #171310; --bg-elev: #1E1915; --surface: #26201B; --surface-2: #322A23; --surface-3: #40362D;
+  --line: rgba(255, 240, 225, 0.10); --text: #F7F1EA; --text-2: #C4B8AA; --text-3: #8F8374;
+  --accent-2: #FF8B47; --accent-soft: #3A2417; --danger: #FF8A80; --ok: #7BD88F;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.5); --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] {
+    --bg: #171310; --bg-elev: #1E1915; --surface: #26201B; --surface-2: #322A23; --surface-3: #40362D;
+    --line: rgba(255, 240, 225, 0.10); --text: #F7F1EA; --text-2: #C4B8AA; --text-3: #8F8374;
+    --accent-2: #FF8B47; --accent-soft: #3A2417; --danger: #FF8A80; --ok: #7BD88F;
+    --shadow: 0 10px 28px rgba(0, 0, 0, 0.5); --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #app { height: 100%; margin: 0; }
@@ -42,7 +63,7 @@ a { color: inherit; }
 .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; background: var(--surface-2); font-weight: 600; transition: background .15s, transform .1s; }
 .btn:hover { background: var(--surface-3); }
 .btn:active { transform: scale(.97); }
-.btn.primary { background: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
 .btn.primary:hover { background: var(--accent-strong); }
 .btn.ghost { background: transparent; border: 1px solid var(--line); }
 .btn.danger { color: var(--danger); }
@@ -51,10 +72,10 @@ a { color: inherit; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn:active { transform: scale(.92); }
 .icon-btn.on { color: var(--accent-2); }
-.field { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; outline: none; }
+.field { background: #fff; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; outline: none; }
 .field:focus { border-color: var(--accent); }
 .chip { padding: 6px 14px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 500; }
-.chip.active { background: var(--accent); color: #fff; }
+.chip.active { background: var(--accent); color: var(--on-accent); }
 .page { padding: 28px 32px 32px; max-width: 1400px; margin: 0 auto; }
 .page h1 { font-size: 30px; letter-spacing: -0.02em; margin-bottom: 18px; }
 .section { margin-top: 30px; }
@@ -67,3 +88,9 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 }
+
+:root[data-theme='dark'] .field { background: var(--surface); }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+.badge.ok { background: var(--accent-soft); color: var(--accent-2); }
+.badge.off { background: transparent; border: 1px dashed var(--text-3); color: var(--text-3); }

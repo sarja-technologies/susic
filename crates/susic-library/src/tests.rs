@@ -211,3 +211,110 @@ fn interrupted_jobs_flagged() {
     assert_eq!(l.mark_interrupted_jobs().unwrap(), 1);
     assert_eq!(l.import_jobs().unwrap()[0].status, "interrupted");
 }
+
+#[test]
+fn server_tracks_link_to_local_copies_instead_of_duplicating() {
+    let l = lib();
+    // Same recording as local "Alpha" (hash h0): linked, no new row.
+    let before = l.stats().unwrap().tracks;
+    let id = l
+        .upsert_remote(&nt("Alpha", "Ann", "One", "", "h0"), 7)
+        .unwrap();
+    assert_eq!(l.stats().unwrap().tracks, before);
+    let t = l.get_track(id).unwrap().unwrap();
+    assert_eq!(t.availability, "local+server");
+    assert_eq!(t.remote_id, Some(7));
+    // Unknown recording becomes a server-only row.
+    let sid = l
+        .upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8)
+        .unwrap();
+    let s = l.get_track(sid).unwrap().unwrap();
+    assert_eq!(
+        (s.availability.as_str(), s.source.as_str()),
+        ("server", "server")
+    );
+    // Re-sync is idempotent.
+    assert_eq!(
+        l.upsert_remote(&nt("Delta", "Cy", "Three", "", "h9"), 8)
+            .unwrap(),
+        sid
+    );
+    // Server-only rows are never treated as missing local files.
+    assert!(l.track_paths().unwrap().iter().all(|(i, _)| *i != sid));
+    // Favourite + offline copy survive; availability reflects the cache.
+    l.set_favourite(sid, true).unwrap();
+    l.set_cache(sid, Some("/cache/8.flac"), true).unwrap();
+    assert_eq!(
+        l.get_track(sid).unwrap().unwrap().availability,
+        "downloaded"
+    );
+    // Importing the same recording locally adopts the local file into this row.
+    let r = l
+        .upsert_track(&nt("Delta", "Cy", "Three", "/m/Delta.mp3", "h9"))
+        .unwrap();
+    assert_eq!(r, Upsert::Updated(sid));
+    let t = l.get_track(sid).unwrap().unwrap();
+    assert!(t.favourite);
+    assert_eq!(t.path, "/m/Delta.mp3");
+    assert_eq!(t.availability, "local+server");
+}
+
+#[test]
+fn removed_remote_tracks_keep_offline_copies() {
+    let l = Library::open_memory().unwrap();
+    let a = l.upsert_remote(&nt("A", "x", "y", "", "ha"), 1).unwrap();
+    let b = l.upsert_remote(&nt("B", "x", "y", "", "hb"), 2).unwrap();
+    l.set_cache(b, Some("/cache/b"), false).unwrap();
+    assert_eq!(l.remote_removed(&[1, 2]).unwrap(), 1);
+    assert!(l.get_track(a).unwrap().is_none());
+    let kept = l.get_track(b).unwrap().unwrap();
+    assert_eq!(
+        (kept.remote_id, kept.availability.as_str()),
+        (None, "downloaded")
+    );
+}
+
+#[test]
+fn playlist_deletion_leaves_tombstone_only_when_synced() {
+    let l = Library::open_memory().unwrap();
+    let p1 = l.create_playlist("plain").unwrap();
+    let p2 = l.create_playlist("synced").unwrap();
+    l.set_playlist_remote_uid(p2, "uid-2").unwrap();
+    l.delete_playlist(p1).unwrap();
+    assert!(l.take_playlist_tombstones().unwrap().is_empty());
+    l.delete_playlist(p2).unwrap();
+    assert_eq!(l.take_playlist_tombstones().unwrap()[0].0, "uid-2");
+}
+
+/// Scale check (run with `cargo test -p susic-library --release -- --ignored --nocapture`).
+#[test]
+#[ignore]
+fn bench_large_library() {
+    let l = Library::open_memory().unwrap();
+    let t0 = std::time::Instant::now();
+    for i in 0..50_000 {
+        l.upsert_track(&nt(
+            &format!("Song number {i}"),
+            &format!("Artist {}", i % 900),
+            &format!("Album {}", i % 4000),
+            &format!("/m/{i}.mp3"),
+            &format!("h{i}"),
+        ))
+        .unwrap();
+    }
+    println!("insert 50k: {:?}", t0.elapsed());
+    let t = std::time::Instant::now();
+    let r = l
+        .list_tracks(&TrackQuery {
+            search: Some("number 4999".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    println!("search ({} hits): {:?}", r.len(), t.elapsed());
+    let t = std::time::Instant::now();
+    let all = l.list_tracks(&TrackQuery::default()).unwrap();
+    println!("list all {}: {:?}", all.len(), t.elapsed());
+    let t = std::time::Instant::now();
+    let a = l.albums(None).unwrap();
+    println!("albums {}: {:?}", a.len(), t.elapsed());
+}

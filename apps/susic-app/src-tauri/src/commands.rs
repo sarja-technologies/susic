@@ -96,6 +96,14 @@ pub fn home(c: Ctl) -> R<Home> {
 #[tauri::command]
 pub fn set_favourite(c: Ctl, id: i64, favourite: bool) -> R<()> {
     c.with_lib(|l| l.set_favourite(id, favourite))?;
+    // Keep the server in step (best effort; the monitor reconciles later).
+    if let Ok(Some(t)) = c.with_lib(|l| l.get_track(id)) {
+        if let (Some(rid), Some(srv)) = (t.remote_id, c.server.lock().unwrap().clone()) {
+            std::thread::spawn(move || {
+                let _ = srv.set_favourite(rid, favourite);
+            });
+        }
+    }
     c.emit(
         "library://changed",
         json!({ "reason": "favourite", "id": id, "favourite": favourite }),
@@ -488,7 +496,22 @@ pub struct LyricsPayload {
 
 #[tauri::command]
 pub fn get_lyrics(c: Ctl, id: i64) -> R<LyricsPayload> {
-    let (raw, offset) = c.with_lib(|l| l.get_lyrics(id))?;
+    let (mut raw, offset) = c.with_lib(|l| l.get_lyrics(id))?;
+    // Server-hosted lyrics (embedded or .lrc beside the file) are fetched on demand.
+    if raw.is_none() {
+        if let Ok(Some(t)) = c.with_lib(|l| l.get_track(id)) {
+            if let (Some(rid), Some(srv), true) = (
+                t.remote_id,
+                c.server.lock().unwrap().clone(),
+                c.server_online.load(std::sync::atomic::Ordering::Relaxed),
+            ) {
+                if let Some(text) = srv.lyrics(rid).filter(|s| !s.trim().is_empty()) {
+                    let _ = c.with_lib(|l| l.set_lyrics(id, Some(&text)));
+                    raw = Some(text);
+                }
+            }
+        }
+    }
     let lyrics = raw.as_deref().map(Lyrics::parse).unwrap_or_default();
     Ok(LyricsPayload {
         lyrics,

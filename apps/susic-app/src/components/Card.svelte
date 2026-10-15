@@ -22,10 +22,10 @@
 <style>
   .card { position: relative; width: 100%; min-width: 0; padding: 8px; border-radius: 16px; transition: background .15s, transform .15s; }
   .card:hover { background: var(--surface); }
-  .art { display: block; width: 100%; aspect-ratio: 1; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+  .art { display: block; width: 100%; aspect-ratio: 1; border-radius: 12px; box-shadow: var(--shadow-sm); }
   .art :global(.cover) { width: 100% !important; height: 100% !important; }
   .play { position: absolute; right: 18px; top: calc(8px + (100% - 16px) * 0); transform: translateY(12px); opacity: 0;
-    width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center;
+    width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center;
     box-shadow: var(--shadow); transition: opacity .15s, transform .15s, background .15s; }
   .card:hover .play, .play:focus-visible { opacity: 1; transform: none; }
   .play:hover { background: var(--accent-strong); }

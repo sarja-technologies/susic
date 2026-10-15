@@ -1,0 +1,16 @@
+[package]
+name = "susic-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Client for the optional Susic music server: API calls, resumable downloads, seekable HTTP reader"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ureq = { version = "2", features = ["json"] }
+
+[dev-dependencies]
+susic-server = { path = "../susic-server" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time"] }

@@ -16,6 +16,8 @@ export function trackMenu(t: Track, ctx?: { playlistId?: number; position?: numb
     { label: 'Go to artist', action: () => app.go('artist', t.artist) },
     { label: 'Edit details…', action: () => (app.dialog = { kind: 'edit-track', track: t }) },
   ];
+  if (t.availability === 'server') items.splice(3, 0, { label: 'Download for offline', action: () => void app.download([t]) });
+  if (t.availability === 'downloaded') items.splice(3, 0, { label: 'Remove download', action: async () => { await api.removeDownloads([t.id]); app.notify('Download removed'); } });
   if (ctx?.playlistId !== undefined && ctx.position !== undefined) {
     const pid = ctx.playlistId, pos = ctx.position;
     items.push({ label: 'Remove from this playlist', action: async () => { await api.playlistRemove(pid, pos); ctx.onChange?.(); } });
