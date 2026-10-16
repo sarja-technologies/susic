@@ -12,11 +12,15 @@ No account, no telemetry. Your music stays yours.
 
 | Home | Unified library | Search |
 |---|---|---|
-| ![Home](docs/screenshots/desktop-home.png) | ![Library](docs/screenshots/desktop-library-unified.png) | ![Search](docs/screenshots/desktop-search.png) |
+| ![Home](docs/screenshots/desktop-home.png) | ![Library](docs/screenshots/desktop-library-unified.png) | ![Search: library and YouTube results, one imported](docs/screenshots/desktop-youtube-search.png) |
 
 | Server settings | Downloads | Android |
 |---|---|---|
 | ![Server](docs/screenshots/desktop-server-settings.png) | ![Downloads](docs/screenshots/desktop-downloads.png) | ![Android](docs/screenshots/android-library.png) |
+
+| YouTube settings (yt-dlp, no API key) | Import queue | Android: YouTube via your server |
+|---|---|---|
+| ![YouTube settings](docs/screenshots/desktop-youtube-settings.png) | ![Imports](docs/screenshots/desktop-youtube-imports.png) | ![Android YouTube settings](docs/screenshots/android-youtube-settings.png) |
 
 ## What it does
 

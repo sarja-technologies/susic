@@ -23,8 +23,25 @@
 - Library schema migration 4: import jobs record title, target, licence and track id.
 - yt-dlp runs with `--ignore-config`; URLs are passed after `--`; playlist URLs are refused.
 
+### Security
+- Server imports: host allowlist (`import_hosts`, YouTube by default); credentials-in-URL and
+  over-long URLs refused; queue limit (`imports_max_queue`, 429); free-space reserve
+  (`imports_min_free_mb`, 507); per-import time limit (`imports_max_minutes`); output files must be
+  regular files inside the imports folder.
+- Searches are capped at 2 concurrent (429) so they can no longer exhaust the blocking thread pool
+  used by streaming; yt-dlp updates are serialised.
+- Cancel and time-outs kill yt-dlp's whole process group (FFmpeg included).
+- systemd unit hardened further (`systemd-analyze security` 5.9 → 1.4); documented imports drop-in
+  corrected (`ReadWritePaths="-/srv/music/Susic Imports"` — the previous `\x20` form broke startup).
+- The server checks the imports folder is writable from inside its sandbox: startup warning,
+  `imports_writable` in `GET /youtube`, clear refusal.
+
 ### Fixed
 - The "Importing… 1/1" banner stayed visible after a URL import finished.
+- A YouTube result could offer "Play" for a track that no longer existed (e.g. after disconnecting
+  the server it was imported to).
+- yt-dlp filesystem errors (`[Errno 30]` etc.) were reported as a bare file path.
+- A server disk-full answer (507) was shown as "server unreachable".
 
 ## 0.2.0 — unreleased
 

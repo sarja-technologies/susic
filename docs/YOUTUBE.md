@@ -6,6 +6,10 @@ into your library on this device or on your self-hosted Susic server. It uses
 needed.** The feature is off until you turn it on (Settings → YouTube search & import, or the button in
 Search).
 
+| Desktop | Android (through your server) |
+|---|---|
+| ![Search with YouTube results](screenshots/desktop-youtube-search.png) | ![Android search and playback](screenshots/android-youtube-search.png) |
+
 ## Your responsibility
 
 Only import content you are allowed to download, for example:
@@ -46,8 +50,9 @@ and are **not verified** by Susic or YouTube. Re-uploads of commercial music are
    cropped square, as cover art. Susic then imports the file like any other: it reads the tags,
    duration and artwork. If artwork couldn't be embedded, the thumbnail is used instead.
 3. **Progress and cancellation.** The import queue (Search rows and Downloads & Imports) shows
-   download size, speed, time remaining and the conversion stages. **Cancel** stops yt-dlp straight
-   away and removes partial files. Imports run one at a time.
+   download size, speed, time remaining and the conversion stages. **Cancel** stops yt-dlp and any
+   FFmpeg it started straight away (the whole process group) and removes partial files. Imports run
+   one at a time, refuse to start with under 2 GB free, and are stopped after 2 hours.
 4. **Duplicates.** Files are named `Artist - Title [videoid].ext`. Importing the same video into the
    same folder again reuses the existing file instead of downloading it again.
 
@@ -90,7 +95,14 @@ susic-server --config /etc/susic/server.toml check                         # sho
 ```
 
 With this on, the server **writes new files** into `music_dir/imports_dir`, so that directory must be
-writable by the server's user. It never changes or deletes existing files. Imported tracks are indexed
+writable by the server's user — under the shipped systemd unit that needs a one-line drop-in
+(`ReadWritePaths="-/srv/music/Susic Imports"`; details and pitfalls in [SERVER.md](SERVER.md)). It
+never changes or deletes existing files.
+
+**Server limits** (all configurable, see [SERVER.md](SERVER.md)): imports only from YouTube hosts by
+default (`import_hosts`), at most 20 queued imports, at least 2 GB kept free on the disk, 1 GiB per
+file, 2 hours per import, and 2 concurrent searches (extra searches get "try again" rather than
+waiting, so they can't slow down streaming). Imported tracks are indexed
 right away and reach clients on their next sync (the app syncs as soon as the import finishes). Any
 paired device can search and import, and can ask the server to update its yt-dlp
 (`POST /api/v1/youtube/update`); revoke devices you don't trust. See [SERVER.md](SERVER.md) for the API.
@@ -104,6 +116,11 @@ paired device can search and import, and can ask the server to update its yt-dlp
 | DRM-protected / members-only / purchase or rental / age-restricted / private / not available in your region | A platform restriction. Susic does not bypass it. |
 | yt-dlp couldn't read this page | YouTube changed. Update yt-dlp. |
 | Playlist import isn't supported | Import songs one at a time. |
+| This server only imports from: … | The server's `import_hosts` doesn't include that site. |
+| The server's import queue is full / Another search is still running | Server limits; wait a moment. |
+| Not enough free space / The server is low on disk space | Imports keep 2 GB free (configurable). |
+| The server can't write to its imports folder … | Server setup: see the systemd drop-in in SERVER.md. |
+| The import took too long and was stopped | Time limit (2 h by default). |
 | This file is larger than Susic's 1 GB import limit | Very long videos are refused. |
 
 ## Optional: official YouTube Data API

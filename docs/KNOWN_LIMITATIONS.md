@@ -48,6 +48,9 @@ Partial / caveats:
 * Opus imports don't play on desktop (see above); M4A is the default.
 * Server imports run one at a time and the job list is kept in memory (lost on server restart; the
   app reports this). Under the shipped systemd unit the imports folder must be added to
-  `ReadWritePaths`; that drop-in was **not** verified on a real systemd host.
+  `ReadWritePaths` (validated in an Ubuntu 24.04 container, not yet on a physical host).
+* The server release binary needs glibc ≥ 2.39 (Ubuntu 24.04+); build from source on older systems.
+* Disconnecting a server in the app does not revoke that device's token on the server (revoke it there).
+* Cancelling on Windows uses `taskkill /T`; the process-group kill is only tested on Linux.
 * No YouTube Music-specific search (album/track metadata from YouTube Music is used only when yt-dlp
   provides it).

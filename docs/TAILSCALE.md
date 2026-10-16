@@ -9,7 +9,8 @@ tailnet address.
 1. Install Tailscale on the server and on each client (`curl -fsSL https://tailscale.com/install.sh | sh`,
    then `sudo tailscale up`; Android: Play Store / F-Droid app).
 2. On the server get its address: `tailscale ip -4` (e.g. `100.101.102.103`) or use MagicDNS
-   (`optiplex.your-tailnet.ts.net`).
+   (`optiplex.your-tailnet.ts.net`). Prefer the **full** MagicDNS name: the bare short name
+   (`optiplex`) only resolves on devices whose DNS search domain includes your tailnet.
 3. Set `bind = "100.101.102.103:8484"` in `/etc/susic/server.toml` (or keep `127.0.0.1:8484` and use
    `sudo tailscale serve --bg 8484` for HTTPS on the tailnet) and restart the service.
 4. `susic-server pair` on the server; in Susic open **Settings → Susic server**, enter
@@ -40,3 +41,15 @@ Local-network streaming was exercised against `127.0.0.1` (desktop) and through 
 (Android emulator). **Remote access over a real Tailscale tailnet has not been tested** in this
 repository's CI or development run — the code path is identical (an HTTP URL), but please run the
 checklist in `docs/RELEASING.md` before relying on it.
+
+## What has been tested
+
+* Server bound to a tailnet address only: reachable via the tailnet IP and the full MagicDNS name,
+  refused on loopback and the LAN address.
+* Susic Android (emulator) pairing, YouTube search, server import and streaming through the full
+  MagicDNS URL.
+* **Not yet tested:** a second physical device on the tailnet (phone on mobile data, another
+  computer), `tailscale serve` HTTPS, and ACL rules. In these tests the client and server were the same
+  machine, so traffic never crossed a real WireGuard link. Use the "Tailscale remote" row of the
+  checklist in [RELEASING.md](RELEASING.md).
+

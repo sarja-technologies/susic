@@ -37,9 +37,22 @@ exposed to the public internet.
   github.com/yt-dlp over HTTPS and refuse it unless its SHA-256 matches the release's `SHA2-256SUMS`.
   yt-dlp always runs with `--ignore-config`, URL arguments follow `--`, only `http(s)` URLs are accepted,
   and no cookies or credentials are ever passed.
-* With `ytdlp_enabled = true`, any paired device can make the server fetch URLs through yt-dlp (which
-  can reach anything the server can reach) and write new files into `imports_dir`. Only pair devices
-  you trust, and revoke lost ones.
+* With `ytdlp_enabled = true`, any **paired** device (all YouTube/import endpoints require a device
+  token) can make the server search YouTube and download into `imports_dir`:
+  * Sources are limited to `import_hosts` (YouTube by default). URLs with credentials, non-http(s)
+    schemes, playlists and URLs over 2 KB are refused. Setting `import_hosts = ["*"]` lets paired devices
+    make the server fetch any URL it can reach, including LAN hosts.
+  * Files are only accepted if they are regular files inside `imports_dir`; anything else is deleted
+    and the import fails. Under systemd, only `imports_dir` (via the documented drop-in),
+    `/var/lib/susic` and a private `/tmp` are writable, which was checked from inside the running service.
+  * Resource limits: ≤ 20 queued imports, ≤ 1 GiB per file, ≥ 2 GB kept free, ≤ 2 h per import, one
+    import at a time, ≤ 2 concurrent searches (others get 429 instead of tying up the thread pool that
+    streaming uses), one yt-dlp update at a time.
+  * Cancel and time-outs kill yt-dlp's whole process group, so FFmpeg can't keep writing afterwards.
+  * The job list (URLs and titles) is visible to every paired device. The hardened unit scores 1.4
+    ("OK") in `systemd-analyze security`.
+  * Disconnecting a device in the app forgets its token locally but does not revoke it on the server;
+    revoke old devices with `susic-server revoke <ID>` or from the device list in Settings → Susic server.
 * The webview CSP limits network access to the app itself; server and YouTube requests are made from
   Rust, not the webview.
 * Android sets `usesCleartextTraffic="true"` so the user can enter an `http://` tailnet/LAN address.
