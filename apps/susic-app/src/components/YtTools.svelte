@@ -62,6 +62,7 @@
             {:else if !y.server}Server doesn’t support YouTube import (update it to Susic 0.3)
             {:else if !y.server.enabled}YouTube import is turned off — set <code>ytdlp_enabled = true</code> in the server config
             {:else if !y.server.ytdlp}yt-dlp not installed on the server
+            {:else if y.server.imports_writable === false}The server can’t write to “{y.server.imports_dir}” — see docs/SERVER.md (ReadWritePaths / folder owner)
             {:else}yt-dlp {y.server.version ?? ''}{y.server.ffmpeg ? '' : ' · FFmpeg missing'} · imports go to “{y.server.imports_dir}”{/if}
           </span></div>
         {#if app.server.online && y.server?.enabled}

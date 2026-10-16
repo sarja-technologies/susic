@@ -880,8 +880,11 @@ impl Library {
 
     pub fn import_jobs(&self) -> Result<Vec<ImportJob>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, url, status, progress, message, created_at, title, target, license, track_id \
-             FROM import_jobs ORDER BY id DESC LIMIT 200",
+            // track_id only while that track still exists (e.g. not after a
+            // server disconnect removed it), so the UI never offers a dead Play.
+            "SELECT j.id, j.url, j.status, j.progress, j.message, j.created_at, j.title, j.target, \
+             j.license, t.id FROM import_jobs j LEFT JOIN tracks t ON t.id = j.track_id \
+             ORDER BY j.id DESC LIMIT 200",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(ImportJob {

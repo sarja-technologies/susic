@@ -188,9 +188,13 @@ pub fn search_blocking(c: &Controller, query: &str, creative_commons: bool) -> R
     }
     match server::server_of(c) {
         Ok(srv) => {
-            let r = srv
-                .youtube_search(query, creative_commons, opts.limit)
-                .map_err(|e| match e {
+            let mut r = srv.youtube_search(query, creative_commons, opts.limit);
+            // The server allows few concurrent searches; typing can briefly overlap.
+            if matches!(&r, Err(susic_client::Error::Server(m)) if m.contains("still running")) {
+                std::thread::sleep(Duration::from_millis(1200));
+                r = srv.youtube_search(query, creative_commons, opts.limit);
+            }
+            let r = r.map_err(|e| match e {
                     susic_client::Error::Server(m) if m.contains("not found") || m.contains("HTTP 404") => {
                         "Your Susic server is too old for YouTube search — update it to 0.3.".to_string()
                     }
@@ -370,6 +374,7 @@ fn run_device_job(c: &Arc<Controller>, id: i64, req: &UrlImport, cancel: &Arc<At
         dest_dir: dest,
         format: req.format.clone(),
         quality: req.quality,
+        ..Default::default()
     };
     let mut last = Instant::now() - Duration::from_secs(1);
     let mut thumb = req.thumb.clone();

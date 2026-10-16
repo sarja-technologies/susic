@@ -90,7 +90,17 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
                 }
             );
             if cfg.ytdlp_enabled {
-                println!("  imports:   {}", cfg.imports_path().display());
+                println!(
+                    "  imports:   {} ({})",
+                    cfg.imports_path().display(),
+                    match susic_server::imports::check_writable(&cfg.imports_path()) {
+                        // `check` runs outside systemd's sandbox; the service reports
+                        // its own view in its startup log and GET /api/v1/youtube.
+                        Ok(()) => "writable by this user; under systemd also see ReadWritePaths"
+                            .to_string(),
+                        Err(e) => format!("NOT WRITABLE: {e}"),
+                    }
+                );
                 println!(
                     "  yt-dlp:    {}",
                     match (&t.ytdlp, &t.version) {
@@ -210,6 +220,11 @@ fn serve(cfg: Config) -> Result<(), String> {
                 live
             ),
         );
+        if cfg.ytdlp_enabled && cfg.music_dir.is_dir() {
+            if let Err(e) = susic_server::imports::check_writable(&cfg.imports_path()) {
+                susic_server::log("warn", &format!("YouTube import will fail: {e}"));
+            }
+        }
         if !cfg.music_dir.is_dir() {
             susic_server::log(
                 "warn",

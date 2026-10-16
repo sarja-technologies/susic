@@ -21,6 +21,15 @@ pub struct Config {
     pub ytdlp_enabled: bool,
     /// Sub-directory of `music_dir` that receives imports.
     pub imports_dir: String,
+    /// Hosts imports may come from (subdomains included). `["*"]` allows any
+    /// http(s) URL yt-dlp supports — including hosts on your LAN.
+    pub import_hosts: Vec<String>,
+    /// Imports are refused when the imports filesystem has less free space.
+    pub imports_min_free_mb: u64,
+    /// Maximum queued + running imports.
+    pub imports_max_queue: usize,
+    /// A single import is stopped after this many minutes.
+    pub imports_max_minutes: u64,
 }
 
 impl Default for Config {
@@ -33,6 +42,14 @@ impl Default for Config {
             server_name: "Susic Server".into(),
             ytdlp_enabled: false,
             imports_dir: "Susic Imports".into(),
+            import_hosts: vec![
+                "youtube.com".into(),
+                "youtu.be".into(),
+                "youtube-nocookie.com".into(),
+            ],
+            imports_min_free_mb: 2048,
+            imports_max_queue: 20,
+            imports_max_minutes: 120,
         }
     }
 }
@@ -81,6 +98,9 @@ impl Config {
             return Err(
                 "imports_dir must be a relative sub-directory of music_dir (no '..')".into(),
             );
+        }
+        if cfg.imports_max_queue == 0 || cfg.imports_max_minutes == 0 {
+            return Err("imports_max_queue and imports_max_minutes must be at least 1".into());
         }
         Ok(cfg)
     }

@@ -130,7 +130,7 @@ class AppStore {
     const t: ImportTarget[] = [];
     const y = this.yt;
     if (y?.supported && y.ytdlp && y.ffmpeg) t.push('device');
-    if (this.server.configured && y?.server?.enabled && y.server.ytdlp && y.server.ffmpeg) t.push('server');
+    if (this.server.configured && y?.server?.enabled && y.server.ytdlp && y.server.ffmpeg && y.server.imports_writable !== false) t.push('server');
     return t;
   }
   get ytCanSearch() {
@@ -138,7 +138,11 @@ class AppStore {
     const y = this.yt;
     return !!(y && ((y.supported && y.ytdlp) || (y.server?.enabled && y.server.ytdlp)));
   }
-  jobFor(url: string): ImportJob | undefined { return this.jobs.find((j) => j.url === url); }
+  /** Latest relevant job for a URL. A finished job whose track is gone (e.g. the
+   *  server it went to was disconnected) is ignored so the result can be imported again. */
+  jobFor(url: string): ImportJob | undefined {
+    return this.jobs.find((j) => j.url === url && !(j.status === 'done' && j.track_id == null));
+  }
   async importResult(r: YtResult, target: ImportTarget) {
     const format = this.setting('import_format', 'm4a');
     const quality = Number(this.setting('import_quality', '0'));

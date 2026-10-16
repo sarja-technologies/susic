@@ -86,6 +86,7 @@ fn imports_cc_licensed_audio_with_metadata_and_artwork() {
         dest_dir: dir.clone(),
         format: "mp3".into(),
         quality: 192,
+        ..Default::default()
     };
     let mut progress = Vec::new();
     let mut info = None;
@@ -160,6 +161,7 @@ fn cancel_stops_download_and_cleans_up() {
         dest_dir: dir.clone(),
         format: "flac".into(),
         quality: 0,
+        ..Default::default()
     };
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = cancel.clone();
@@ -194,6 +196,7 @@ fn unavailable_video_gives_clear_error() {
         dest_dir: dir.clone(),
         format: "mp3".into(),
         quality: 0,
+        ..Default::default()
     };
     let e = ytdlp::run(
         &t,

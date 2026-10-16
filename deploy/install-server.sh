@@ -30,4 +30,6 @@ Installed. Next:
   3. sudo systemctl enable --now susic-server
   4. sudo -u susic susic-server --config /etc/susic/server.toml pair
   5. curl -s http://<bind-address>/health
+Optional YouTube import (ytdlp_enabled = true) needs a writable imports folder
+and a systemd drop-in: see docs/SERVER.md, "Enabling YouTube import under systemd".
 MSG

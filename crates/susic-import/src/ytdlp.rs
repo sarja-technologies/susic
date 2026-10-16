@@ -89,7 +89,12 @@ impl Tools {
         Tools {
             ytdlp: managed.or_else(|| which("yt-dlp")),
             managed: is_managed,
-            ffmpeg: which("ffmpeg"),
+            // An ffmpeg placed next to the managed yt-dlp wins (useful on
+            // servers without a packaged FFmpeg).
+            ffmpeg: managed_dir
+                .map(|d| d.join(exe("ffmpeg")))
+                .filter(|p| p.is_file())
+                .or_else(|| which("ffmpeg")),
             js_runtime,
             cache_dir: None,
         }
@@ -520,6 +525,81 @@ pub struct Options {
     pub format: String,
     /// kbps for lossy formats, 0 = best
     pub quality: u32,
+    /// Refuse to start unless the destination has at least this much free space.
+    pub min_free_bytes: u64,
+    /// Kill the job if it runs longer than this.
+    pub max_duration: Option<Duration>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self::new(PathBuf::new(), "m4a", 0)
+    }
+}
+
+impl Options {
+    pub fn new(dest_dir: PathBuf, format: &str, quality: u32) -> Self {
+        Self {
+            dest_dir,
+            format: format.into(),
+            quality,
+            min_free_bytes: DEFAULT_MIN_FREE,
+            max_duration: Some(DEFAULT_MAX_DURATION),
+        }
+    }
+}
+
+/// Per-file cap passed to yt-dlp (`--max-filesize`).
+pub const MAX_FILE_BYTES: u64 = 1 << 30;
+/// Default free-space reserve: the 1 GiB file cap plus 1 GiB headroom.
+pub const DEFAULT_MIN_FREE: u64 = 2 << 30;
+pub const DEFAULT_MAX_DURATION: Duration = Duration::from_secs(2 * 3600);
+
+/// Bytes available to unprivileged users on the filesystem holding `p`.
+pub fn free_space(p: &Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c = std::ffi::CString::new(p.as_os_str().as_bytes()).ok()?;
+        // SAFETY: statvfs writes into a zeroed struct we own; c is NUL-terminated.
+        unsafe {
+            let mut s: libc::statvfs = std::mem::zeroed();
+            (libc::statvfs(c.as_ptr(), &mut s) == 0)
+                .then(|| (s.f_bavail as u64).saturating_mul(s.f_frsize as u64))
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = p;
+        None
+    }
+}
+
+/// Kill yt-dlp *and* its children (FFmpeg) so nothing keeps writing after a
+/// cancel. yt-dlp is started as the leader of its own process group.
+fn kill_tree(pid: u32) {
+    #[cfg(unix)]
+    // SAFETY: plain syscall; a negative pid addresses the process group.
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .status();
+    }
+}
+
+/// True if `p` is a regular file (not a symlink) inside `dir`.
+pub fn inside(dir: &Path, p: &Path) -> bool {
+    let (Ok(d), Ok(f)) = (dir.canonicalize(), p.canonicalize()) else {
+        return false;
+    };
+    let regular = std::fs::symlink_metadata(p)
+        .map(|m| m.file_type().is_file())
+        .unwrap_or(false);
+    regular && f.starts_with(&d) && f != d
 }
 
 pub const FORMATS: &[&str] = &["mp3", "m4a", "opus", "flac", "wav", "best"];
@@ -657,7 +737,7 @@ pub fn build_args(tools: &Tools, url: &str, o: &Options) -> Vec<String> {
         "--retry-sleep",
         "extractor:exp=1:30",
         "--max-filesize",
-        "1G",
+        "1024M",
         "-x",
         "--embed-metadata",
         "--embed-thumbnail",
@@ -784,6 +864,12 @@ pub fn friendly_error(stderr: &str) -> String {
         || has("rate limit")
     {
         "YouTube is rate-limiting this network. Wait a few minutes before searching or importing again."
+    } else if has("read-only file system") || has("[errno 30]") {
+        "The import folder is read-only for Susic. On a server running under systemd, add the folder to ReadWritePaths (see docs/SERVER.md)."
+    } else if has("permission denied") || has("[errno 13]") {
+        "Susic isn't allowed to write to the import folder. Check its owner and permissions (and ReadWritePaths under systemd)."
+    } else if has("no space left on device") || has("[errno 28]") {
+        "The disk is full."
     } else if has("http error 403") || has("403: forbidden") {
         FORBIDDEN_MSG
     } else if has("private video") {
@@ -832,9 +918,10 @@ pub fn friendly_error(stderr: &str) -> String {
         return msg.to_string();
     }
     let raw = err_line.trim_start_matches("ERROR:").trim();
-    // "[youtube] abc: message" → "message"
-    let raw = raw
-        .strip_prefix('[')
+    // "[youtube] abc: message" → "message" (but keep Python's "[Errno N] …")
+    let raw = Some(raw)
+        .filter(|r| !r.starts_with("[Errno"))
+        .and_then(|r| r.strip_prefix('['))
         .and_then(|r| r.split_once("] "))
         .map(|(_, r)| r.split_once(": ").map(|(_, m)| m).unwrap_or(r))
         .unwrap_or(raw);
@@ -921,27 +1008,49 @@ fn run_once(
             reused: true,
         });
     }
+    if let Some(free) = free_space(&o.dest_dir) {
+        if free < o.min_free_bytes {
+            return Err(format!(
+                "Not enough free space: {:.1} GB free, Susic keeps at least {:.1} GB free for imports.",
+                free as f64 / 1e9,
+                o.min_free_bytes as f64 / 1e9
+            ));
+        }
+    }
     let before: Vec<PathBuf> = std::fs::read_dir(&o.dest_dir)
         .map(|rd| rd.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
 
-    let mut child: Child = Command::new(&bin)
-        .args(build_args(tools, url, o))
+    let mut cmd = Command::new(&bin);
+    cmd.args(build_args(tools, url, o))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let mut child: Child = cmd
         .spawn()
         .map_err(|e| format!("Could not start yt-dlp: {e}"))?;
+    let pid = child.id();
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
-    let child = Arc::new(Mutex::new(child));
     let finished = Arc::new(AtomicBool::new(false));
+    let timed_out = Arc::new(AtomicBool::new(false));
     let watcher = {
-        let (child, finished, cancel) = (child.clone(), finished.clone(), cancel.clone());
+        let (finished, cancel, timed_out) = (finished.clone(), cancel.clone(), timed_out.clone());
+        let limit = o.max_duration;
+        let start = Instant::now();
         std::thread::spawn(move || {
             while !finished.load(Ordering::Relaxed) {
-                if cancel.load(Ordering::Relaxed) {
-                    let _ = child.lock().unwrap().kill();
+                let over = limit.is_some_and(|l| start.elapsed() > l);
+                if over {
+                    timed_out.store(true, Ordering::SeqCst);
+                }
+                if over || cancel.load(Ordering::Relaxed) {
+                    kill_tree(pid);
                     return;
                 }
                 std::thread::sleep(Duration::from_millis(150));
@@ -980,9 +1089,14 @@ fn run_once(
             on_event(Event::Progress(f, s.to_string()));
         }
     }
-    let status = child.lock().unwrap().wait().map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| e.to_string())?;
     finished.store(true, Ordering::Relaxed);
     let _ = watcher.join();
+    if cancel.load(Ordering::Relaxed) || timed_out.load(Ordering::Relaxed) {
+        // Make sure no grandchild (FFmpeg) is still writing before cleanup.
+        kill_tree(pid);
+        std::thread::sleep(Duration::from_millis(200));
+    }
     let err = err_thread.join().unwrap_or_default();
     let id = info.as_ref().map(|i| i.id.clone()).or(known_id);
     let cleanup = |keep: &[PathBuf]| {
@@ -994,9 +1108,22 @@ fn run_once(
         cleanup(&[]);
         return Err("cancelled".into());
     }
+    if timed_out.load(Ordering::Relaxed) {
+        cleanup(&[]);
+        return Err("The import took too long and was stopped.".into());
+    }
     if !status.success() {
         cleanup(&[]);
         return Err(friendly_error(&err));
+    }
+    // Defence in depth: only accept regular files inside the destination.
+    if let Some(f) = files.iter().find(|f| f.exists() && !inside(&o.dest_dir, f)) {
+        let _ = std::fs::remove_file(f);
+        cleanup(&[]);
+        return Err(format!(
+            "yt-dlp wrote outside the import folder ({}); refused.",
+            f.display()
+        ));
     }
     files.retain(|p| p.is_file());
     if files.is_empty() {
@@ -1134,6 +1261,15 @@ mod tests {
             e("WARNING: a\nERROR: [generic] abc: Something odd"),
             "Something odd"
         );
+        assert!(
+            e("ERROR: [Errno 30] Read-only file system: '/srv/music/x.webp'")
+                .contains("ReadWritePaths")
+        );
+        assert!(e("ERROR: [Errno 13] Permission denied: '/x'").contains("permissions"));
+        assert_eq!(
+            e("ERROR: [Errno 99] Odd thing: '/x'"),
+            "[Errno 99] Odd thing: '/x'"
+        );
     }
 
     #[test]
@@ -1153,6 +1289,7 @@ mod tests {
             dest_dir: PathBuf::from("/m"),
             format: "mp3".into(),
             quality: 192,
+            ..Default::default()
         };
         let a = build_args(&t, "https://youtu.be/aqz-KE-bpKQ", &o);
         let n = a.len();

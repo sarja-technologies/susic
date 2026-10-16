@@ -26,3 +26,11 @@ server_name = "Homelab Music"
 ytdlp_enabled = false
 # Sub-folder of music_dir that receives imports.
 imports_dir = "Susic Imports"
+# Hosts imports may come from (subdomains included). ["*"] allows any site yt-dlp
+# supports, including hosts on your LAN — only if you trust every paired device.
+import_hosts = ["youtube.com", "youtu.be", "youtube-nocookie.com"]
+# Refuse imports when less than this much space is free (each file is capped at 1 GiB).
+imports_min_free_mb = 2048
+# Maximum queued + running imports, and the time limit for one import.
+imports_max_queue = 20
+imports_max_minutes = 120

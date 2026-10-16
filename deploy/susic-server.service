@@ -6,8 +6,10 @@ Wants=network-online.target
 # If the music SSD is a separate mount, add a drop-in (systemctl edit susic-server):
 #   [Unit]
 #   RequiresMountsFor=/mnt/music
-# With ytdlp_enabled = true, also allow writes to the imports folder (drop-in [Service]):
-#   ReadWritePaths=/srv/music/Susic\x20Imports
+# With ytdlp_enabled = true, also allow writes to the imports folder (drop-in [Service]).
+# Quote paths with spaces; the leading "-" keeps the service starting when the music
+# disk is unmounted (without it systemd fails with status=226/NAMESPACE):
+#   ReadWritePaths="-/srv/music/Susic Imports"
 
 [Service]
 Type=simple
@@ -16,7 +18,8 @@ Group=susic
 ExecStart=/usr/local/bin/susic-server --config /etc/susic/server.toml serve
 Restart=on-failure
 RestartSec=3
-# Hardening: the service needs the network and its own data dir only.
+# Hardening: the service needs the network and its own data dir only (plus the
+# imports folder when YouTube import is enabled, see below).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
@@ -28,6 +31,23 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
 LockPersonality=true
+# Verified with yt-dlp, FFmpeg and Node.js imports (systemd-analyze security: 1.4 OK).
+# MemoryDenyWriteExecute is deliberately not set: it breaks the JS runtime yt-dlp uses.
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+PrivateIPC=true
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 ReadWritePaths=/var/lib/susic
 StateDirectory=susic
 

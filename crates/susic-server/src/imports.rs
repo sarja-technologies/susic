@@ -10,7 +10,7 @@ use crate::api::AppState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use susic_import::ytdlp::{self, Event, Options, Tools};
@@ -57,8 +57,68 @@ pub struct Imports {
     cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     next: AtomicU64,
     queue: Mutex<Option<mpsc::Sender<u64>>>,
-    /// Serialises searches so a burst of typing can't fan out into many yt-dlp processes.
-    pub search_lock: Mutex<()>,
+    /// Searches in flight. Bounded so searches can never occupy the blocking
+    /// thread pool that streaming and library requests also use.
+    pub searches: AtomicUsize,
+    /// A yt-dlp install/update is running.
+    pub updating: AtomicBool,
+}
+
+/// Concurrent searches allowed; more get 429 instead of waiting.
+pub const MAX_SEARCHES: usize = 2;
+
+/// Why a submission was refused (mapped to an HTTP status by the API).
+#[derive(Debug)]
+pub enum Refused {
+    /// Feature off or tools missing (403).
+    Unavailable(String),
+    /// Bad input or disallowed source (400).
+    Invalid(String),
+    /// Queue full (429).
+    Busy(String),
+    /// Not enough disk space (507).
+    NoSpace(String),
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Refused::Unavailable(m)
+            | Refused::Invalid(m)
+            | Refused::Busy(m)
+            | Refused::NoSpace(m) => f.write_str(m),
+        }
+    }
+}
+
+/// Host part of an http(s) URL, lower-cased, without port. Rejects userinfo.
+pub fn url_host(url: &str) -> Option<String> {
+    let rest = url.trim().split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.contains('@') || authority.is_empty() {
+        return None;
+    }
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next()?.to_string()
+    } else {
+        authority
+            .rsplit_once(':')
+            .map(|(h, _)| h)
+            .unwrap_or(authority)
+            .to_string()
+    };
+    Some(host.to_ascii_lowercase()).filter(|h| !h.is_empty())
+}
+
+/// Whether `url`'s host is allowed by `allowed` (exact or subdomain; `*` = any).
+pub fn host_allowed(url: &str, allowed: &[String]) -> bool {
+    let Some(host) = url_host(url) else {
+        return false;
+    };
+    allowed.iter().any(|a| {
+        let a = a.trim().trim_start_matches('.').to_ascii_lowercase();
+        a == "*" || host == a || host.ends_with(&format!(".{a}"))
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +130,29 @@ pub struct Capabilities {
     pub ffmpeg: bool,
     pub js_runtime: Option<String>,
     pub imports_dir: String,
+    /// The running server can create files in the imports folder.
+    pub imports_writable: bool,
+}
+
+/// Can this process (inside its systemd sandbox, if any) create files in
+/// `dir`? Creates the folder if missing, then writes and removes a probe.
+pub fn check_writable(dir: &Path) -> Result<(), String> {
+    let hint = |e: std::io::Error| {
+        let why = match e.raw_os_error() {
+            Some(30) => "the filesystem is read-only for the server — under systemd, add it to ReadWritePaths (docs/SERVER.md)".to_string(),
+            Some(13) => "permission denied — make the folder owned by the server's user (docs/SERVER.md)".to_string(),
+            _ => e.to_string(),
+        };
+        format!(
+            "The server can't write to its imports folder {}: {why}",
+            dir.display()
+        )
+    };
+    std::fs::create_dir_all(dir).map_err(hint)?;
+    let probe = dir.join(format!(".susic-write-test-{}", std::process::id()));
+    std::fs::write(&probe, b"").map_err(hint)?;
+    let _ = std::fs::remove_file(probe);
+    Ok(())
 }
 
 pub fn tools(st: &AppState) -> Tools {
@@ -90,6 +173,7 @@ pub fn capabilities(st: &AppState) -> Capabilities {
         ffmpeg: s.ffmpeg.is_some(),
         js_runtime: s.js_runtime,
         imports_dir: st.cfg.imports_dir.clone(),
+        imports_writable: st.cfg.ytdlp_enabled && check_writable(&st.cfg.imports_path()).is_ok(),
     }
 }
 
@@ -151,23 +235,60 @@ impl Imports {
 }
 
 /// Queue an import. Validates input up front so clients get immediate errors.
-pub fn submit(st: &Arc<AppState>, req: NewJob) -> Result<Job, String> {
-    if let Some(why) = unavailable(st, true) {
-        return Err(why);
+pub fn submit(st: &Arc<AppState>, req: NewJob) -> Result<Job, Refused> {
+    let url = req.url.trim().to_string();
+    if url.len() > 2048 {
+        return Err(Refused::Invalid("URL is too long".into()));
     }
-    ytdlp::validate_url(&req.url)?;
+    ytdlp::validate_url(&url).map_err(Refused::Invalid)?;
+    if url_host(&url).is_none() {
+        return Err(Refused::Invalid(
+            "URL has no valid host (or contains credentials)".into(),
+        ));
+    }
+    if !host_allowed(&url, &st.cfg.import_hosts) {
+        return Err(Refused::Invalid(format!(
+            "This server only imports from: {}. Its owner can change import_hosts in the server config.",
+            st.cfg.import_hosts.join(", ")
+        )));
+    }
     if !ytdlp::FORMATS.contains(&req.format.as_str()) {
-        return Err(format!("unsupported format '{}'", req.format));
+        return Err(Refused::Invalid(format!(
+            "unsupported format '{}'",
+            req.format
+        )));
+    }
+    if let Some(why) = unavailable(st, true) {
+        return Err(Refused::Unavailable(why));
+    }
+    check_writable(&st.cfg.imports_path()).map_err(Refused::Unavailable)?;
+    let need = st.cfg.imports_min_free_mb.saturating_mul(1 << 20);
+    let probe = st.cfg.imports_path();
+    let probe = if probe.is_dir() {
+        probe
+    } else {
+        st.cfg.music_dir.clone()
+    };
+    if let Some(free) = ytdlp::free_space(&probe) {
+        if free < need {
+            return Err(Refused::NoSpace(format!(
+                "The server is low on disk space ({:.1} GB free; imports keep {:.1} GB free).",
+                free as f64 / 1e9,
+                need as f64 / 1e9
+            )));
+        }
     }
     let im = &st.imports;
-    let url = req.url.trim().to_string();
     {
         let jobs = im.jobs.lock().unwrap();
-        if let Some(j) = jobs
-            .iter()
-            .find(|j| j.url == url && (j.status == "queued" || j.status == "running"))
-        {
+        if let Some(j) = jobs.iter().find(|j| j.url == url && is_active(j)) {
             return Ok(j.clone());
+        }
+        if jobs.iter().filter(|j| is_active(j)).count() >= st.cfg.imports_max_queue {
+            return Err(Refused::Busy(format!(
+                "The server's import queue is full ({} imports). Wait for some to finish.",
+                st.cfg.imports_max_queue
+            )));
         }
     }
     let id = im.next.fetch_add(1, Ordering::SeqCst) + 1;
@@ -216,13 +337,13 @@ pub fn submit(st: &Arc<AppState>, req: NewJob) -> Result<Job, String> {
                     process(&st2, id);
                 }
             })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Refused::Unavailable(e.to_string()))?;
         *q = Some(tx);
     }
     q.as_ref()
         .unwrap()
         .send(id)
-        .map_err(|_| "import worker stopped".to_string())?;
+        .map_err(|_| Refused::Unavailable("import worker stopped".into()))?;
     Ok(job)
 }
 
@@ -262,6 +383,8 @@ fn process(st: &Arc<AppState>, id: u64) {
         dest_dir: dest.clone(),
         format: job.format.clone(),
         quality: job.quality,
+        min_free_bytes: st.cfg.imports_min_free_mb.saturating_mul(1 << 20),
+        max_duration: Some(Duration::from_secs(st.cfg.imports_max_minutes * 60)),
     };
     let res = ytdlp::run(
         &tools(st),

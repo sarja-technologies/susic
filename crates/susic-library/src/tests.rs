@@ -227,7 +227,19 @@ fn import_job_records_target_title_and_licence() {
     assert_eq!(job.target, "server");
     assert_eq!(job.title, "Real title");
     assert_eq!(job.license, "CC BY");
-    assert_eq!(job.track_id, Some(42));
+    assert_eq!(job.track_id, None, "track 42 does not exist");
+    let t = l.upsert_track(&nt("Song", "Ann", "One", "", "hz")).unwrap();
+    let tid = match t {
+        Upsert::Inserted(i) | Upsert::Updated(i) | Upsert::Duplicate(i) => i,
+    };
+    l.set_import_job_result(j, None, None, Some(tid)).unwrap();
+    assert_eq!(l.import_jobs().unwrap()[0].track_id, Some(tid));
+    l.remove_track(tid).unwrap();
+    assert_eq!(
+        l.import_jobs().unwrap()[0].track_id,
+        None,
+        "stale id hidden"
+    );
 }
 
 #[test]

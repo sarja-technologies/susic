@@ -489,15 +489,26 @@ async fn youtube_search(
             .map(|v| v == "1" || v == "true")
             .unwrap_or(false),
     };
+    // Reserve a slot before taking a blocking thread; never queue behind other searches.
+    struct Slot(S);
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            self.0.imports.searches.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    if s.imports.searches.fetch_add(1, Ordering::SeqCst) >= crate::imports::MAX_SEARCHES {
+        s.imports.searches.fetch_sub(1, Ordering::SeqCst);
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Another search is still running on the server — try again in a moment.".into(),
+        ));
+    }
+    let slot = Slot(s.clone());
     blocking(&s, move |st| {
+        let _slot = slot;
         if let Some(why) = crate::imports::unavailable(st, false) {
             return Err(ApiError(StatusCode::FORBIDDEN, why));
         }
-        let _g = st
-            .imports
-            .search_lock
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
         let results = susic_import::ytdlp::search(&crate::imports::tools(st), &query, &opts)
             .map_err(|e| ApiError(StatusCode::FAILED_DEPENDENCY, e))?;
         Ok(Json(serde_json::json!({ "results": results })))
@@ -506,13 +517,19 @@ async fn youtube_search(
 }
 
 async fn youtube_update(State(s): State<S>) -> ApiResult<Json<serde_json::Value>> {
-    blocking(&s, |st| {
-        if !st.cfg.ytdlp_enabled {
-            return Err(ApiError(
-                StatusCode::FORBIDDEN,
-                "YouTube features are turned off on this server".into(),
-            ));
-        }
+    if !s.cfg.ytdlp_enabled {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "YouTube features are turned off on this server".into(),
+        ));
+    }
+    if s.imports.updating.swap(true, Ordering::SeqCst) {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "yt-dlp is already being updated".into(),
+        ));
+    }
+    let r = blocking(&s, |st| {
         let dir = st.cfg.tools_dir();
         let msg = if crate::imports::tools(st).ytdlp.is_none() {
             susic_import::ytdlp::install_managed(&dir).map(|v| format!("Installed yt-dlp {v}"))
@@ -523,7 +540,9 @@ async fn youtube_update(State(s): State<S>) -> ApiResult<Json<serde_json::Value>
         crate::log("info", &msg);
         Ok(Json(serde_json::json!({ "message": msg })))
     })
-    .await
+    .await;
+    s.imports.updating.store(false, Ordering::SeqCst);
+    r
 }
 
 async fn list_imports(State(s): State<S>) -> Json<serde_json::Value> {
@@ -538,16 +557,18 @@ async fn create_import(
     let r = tokio::task::spawn_blocking(move || crate::imports::submit(&s2, req))
         .await
         .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "task failed".into()))?;
+    use crate::imports::Refused;
     match r {
         Ok(job) => Ok((StatusCode::ACCEPTED, Json(job))),
-        Err(e) => Err(ApiError(
-            if e.contains("turned off") || e.contains("not installed") {
-                StatusCode::FORBIDDEN
-            } else {
-                StatusCode::BAD_REQUEST
-            },
-            e,
-        )),
+        Err(e) => {
+            let code = match &e {
+                Refused::Unavailable(_) => StatusCode::FORBIDDEN,
+                Refused::Invalid(_) => StatusCode::BAD_REQUEST,
+                Refused::Busy(_) => StatusCode::TOO_MANY_REQUESTS,
+                Refused::NoSpace(_) => StatusCode::INSUFFICIENT_STORAGE,
+            };
+            Err(ApiError(code, e.to_string()))
+        }
     }
 }
 

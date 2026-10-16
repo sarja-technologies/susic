@@ -39,7 +39,7 @@ export interface CacheInfo { bytes: number; tracks: number; max_mb: number; auto
 export interface ServerDevice { id: number; name: string; created_at: number; last_seen: number; revoked: boolean }
 export interface YtResult { id: string; url: string; title: string; artist: string; channel: string; duration_ms: number | null; thumb: string; live: boolean }
 export interface YtSearch { source: 'device' | 'server' | 'api'; results: YtResult[] }
-export interface YtServerCaps { enabled: boolean; ytdlp: boolean; version: string | null; ffmpeg: boolean; js_runtime: string | null; imports_dir: string }
+export interface YtServerCaps { enabled: boolean; ytdlp: boolean; version: string | null; ffmpeg: boolean; js_runtime: string | null; imports_dir: string; imports_writable?: boolean | null }
 export interface YtStatus {
   supported: boolean; ytdlp: string | null; version: string | null; managed: boolean; ffmpeg: string | null;
   js_runtime: string | null; can_install: boolean; server: YtServerCaps | null;

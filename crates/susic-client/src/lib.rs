@@ -39,7 +39,8 @@ fn map_err(e: ureq::Error) -> Error {
                 .ok()
                 .and_then(|v| v["error"].as_str().map(String::from))
                 .unwrap_or_else(|| format!("HTTP {code}"));
-            if code >= 500 {
+            // 507 (server disk full) is a real answer, not an outage.
+            if code >= 500 && code != 507 {
                 Error::Unreachable(msg)
             } else {
                 Error::Server(msg)
@@ -129,6 +130,9 @@ pub struct YoutubeCaps {
     pub ffmpeg: bool,
     pub js_runtime: Option<String>,
     pub imports_dir: String,
+    /// Absent on servers that predate the check.
+    #[serde(default)]
+    pub imports_writable: Option<bool>,
 }
 
 impl YoutubeCaps {
@@ -136,7 +140,7 @@ impl YoutubeCaps {
         self.enabled && self.ytdlp
     }
     pub fn can_import(&self) -> bool {
-        self.enabled && self.ytdlp && self.ffmpeg
+        self.enabled && self.ytdlp && self.ffmpeg && self.imports_writable != Some(false)
     }
 }
 
