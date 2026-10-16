@@ -1,4 +1,4 @@
-import { api, on, type PlayerState, type QueueView, type Track, type Playlist, type ServerInfo } from './api';
+import { api, on, type PlayerState, type QueueView, type Track, type Playlist, type ServerInfo, type YtStatus, type ImportJob, type ImportTarget, type YtResult } from './api';
 import { open } from '@tauri-apps/plugin-dialog';
 
 export type Route = { name: string; id?: string; extra?: string };
@@ -23,6 +23,9 @@ class AppStore {
   server = $state<ServerInfo>({ configured: false, url: null, name: null, device_name: null, online: false, tracks: 0 });
   syncing = $state(false);
   downloading = $state<Record<number, number>>({});
+  /** yt-dlp / FFmpeg availability here and on the server (null until loaded). */
+  yt = $state<YtStatus | null>(null);
+  jobs = $state<ImportJob[]>([]);
   private toastTimer: number | undefined;
 
   get mobile() { return this.platform === 'android' || this.narrow; }
@@ -106,6 +109,48 @@ class AppStore {
       if (pct >= 100) { const d = { ...this.downloading }; delete d[p.id]; this.downloading = d; }
     });
     await on('import://notify', (e: any) => this.notify(e.message));
+    await on('import://idle', () => { if (!this.importProgress || this.importProgress.done >= this.importProgress.total) this.importProgress = null; });
+    let jobsTimer: number | undefined;
+    await on('jobs://changed', () => {
+      // Progress events arrive several times a second per job: coalesce.
+      if (jobsTimer) return;
+      jobsTimer = window.setTimeout(() => { jobsTimer = undefined; void this.refreshJobs(); }, 150);
+    });
+    void this.refreshJobs();
+    void this.refreshYt();
+  }
+
+  // ---- YouTube search & import ----
+  async refreshYt() { try { this.yt = await api.ytdlpStatus(); } catch { /* keep last known */ } }
+  async refreshJobs() { try { this.jobs = await api.jobs(); } catch { /* ignore */ } }
+  get ytEnabled() { return this.setting('youtube_enabled') === 'true'; }
+  get ytBackend(): 'ytdlp' | 'api' { return this.setting('youtube_backend', 'ytdlp') === 'api' ? 'api' : 'ytdlp'; }
+  /** Where imports can go right now. */
+  get importTargets(): ImportTarget[] {
+    const t: ImportTarget[] = [];
+    const y = this.yt;
+    if (y?.supported && y.ytdlp && y.ffmpeg) t.push('device');
+    if (this.server.configured && y?.server?.enabled && y.server.ytdlp && y.server.ffmpeg && y.server.imports_writable !== false) t.push('server');
+    return t;
+  }
+  get ytCanSearch() {
+    if (this.ytBackend === 'api') return !!this.setting('youtube_api_key');
+    const y = this.yt;
+    return !!(y && ((y.supported && y.ytdlp) || (y.server?.enabled && y.server.ytdlp)));
+  }
+  /** Latest relevant job for a URL. A finished job whose track is gone (e.g. the
+   *  server it went to was disconnected) is ignored so the result can be imported again. */
+  jobFor(url: string): ImportJob | undefined {
+    return this.jobs.find((j) => j.url === url && !(j.status === 'done' && j.track_id == null));
+  }
+  async importResult(r: YtResult, target: ImportTarget) {
+    const format = this.setting('import_format', 'm4a');
+    const quality = Number(this.setting('import_quality', '0'));
+    try {
+      await api.importUrl({ url: r.url, format, quality, target, title: r.title, thumb: r.thumb });
+      await this.refreshJobs();
+      this.notify(`Importing “${r.title}” ${target === 'server' ? 'to your server' : 'to this device'}…`);
+    } catch (e) { this.notify(String(e), 'error'); }
   }
 
   applyTheme() {

@@ -18,6 +18,9 @@ Susic is built on open-source components. Principal dependencies (see `Cargo.loc
 | AndroidX Media3 (ExoPlayer, MediaSession) | Apache-2.0 |
 
 Optional external tools that Susic can invoke but does not bundle: **yt-dlp** (Unlicense) and **FFmpeg** (LGPL/GPL).
-Lyrics may be fetched from **LRCLIB**; YouTube search uses the **YouTube Data API** under Google's terms.
+On request, Susic downloads the official yt-dlp release (Unlicense; the standalone build includes
+Python and other components under their own licences, see the yt-dlp project) into its data folder.
+Lyrics may be fetched from **LRCLIB**; YouTube search uses yt-dlp, or optionally the **YouTube Data
+API** under Google's terms.
 
 A scripted `cargo metadata` licence scan of all 610 crates found only MIT/Apache-2.0/BSD/Zlib/Unicode/MPL-2.0/CDLA-Permissive-2.0 (webpki-roots) licences, all compatible with GPL-3.0-or-later.

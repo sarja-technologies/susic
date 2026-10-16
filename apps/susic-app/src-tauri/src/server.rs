@@ -62,7 +62,7 @@ fn downloads_dir(c: &Controller) -> PathBuf {
     c.data_dir.join("downloads")
 }
 
-fn server_of(c: &Controller) -> R<Server> {
+pub(crate) fn server_of(c: &Controller) -> R<Server> {
     c.server
         .lock()
         .unwrap()
@@ -703,6 +703,7 @@ mod tests {
             data_dir: root.join("srv"),
             scan_interval_secs: 0,
             server_name: "Test".into(),
+            ..Default::default()
         };
         let state = susic_server::open_state(cfg).unwrap();
         state.run_scan().unwrap().unwrap();

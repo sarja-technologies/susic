@@ -49,6 +49,7 @@ impl Fixture {
             data_dir: root.join("data"),
             scan_interval_secs: 0,
             server_name: "Test".into(),
+            ..Default::default()
         };
         let state = susic_server::open_state(cfg).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();

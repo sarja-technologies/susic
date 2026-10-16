@@ -206,10 +206,40 @@ fn settings_persist() {
 #[test]
 fn interrupted_jobs_flagged() {
     let l = lib();
-    let j = l.add_import_job("https://example.com/a").unwrap();
+    let j = l
+        .add_import_job("https://example.com/a", "", "device")
+        .unwrap();
     l.update_import_job(j, "running", 0.3, "").unwrap();
     assert_eq!(l.mark_interrupted_jobs().unwrap(), 1);
     assert_eq!(l.import_jobs().unwrap()[0].status, "interrupted");
+}
+
+#[test]
+fn import_job_records_target_title_and_licence() {
+    let l = lib();
+    let j = l
+        .add_import_job("https://example.com/b", "Hint", "server")
+        .unwrap();
+    l.set_import_job_result(j, Some("Real title"), Some("CC BY"), None)
+        .unwrap();
+    l.set_import_job_result(j, None, None, Some(42)).unwrap();
+    let job = &l.import_jobs().unwrap()[0];
+    assert_eq!(job.target, "server");
+    assert_eq!(job.title, "Real title");
+    assert_eq!(job.license, "CC BY");
+    assert_eq!(job.track_id, None, "track 42 does not exist");
+    let t = l.upsert_track(&nt("Song", "Ann", "One", "", "hz")).unwrap();
+    let tid = match t {
+        Upsert::Inserted(i) | Upsert::Updated(i) | Upsert::Duplicate(i) => i,
+    };
+    l.set_import_job_result(j, None, None, Some(tid)).unwrap();
+    assert_eq!(l.import_jobs().unwrap()[0].track_id, Some(tid));
+    l.remove_track(tid).unwrap();
+    assert_eq!(
+        l.import_jobs().unwrap()[0].track_id,
+        None,
+        "stale id hidden"
+    );
 }
 
 #[test]

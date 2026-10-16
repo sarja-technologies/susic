@@ -41,9 +41,12 @@ Rescans skip files whose path and size are unchanged.
 ## Providers
 
 1. Local files / folders (`susic-import::read_track`, `scan_folder`).
-2. Discovery: optional YouTube Data API search (user key, results transient,
-   open in YouTube) and optional LRCLIB lyric lookup.
-3. Desktop URL import via external `yt-dlp` + FFmpeg (never bundled).
+2. YouTube search & import (`susic-import::ytdlp`, app `youtube.rs`, server `imports.rs`): yt-dlp
+   `ytsearch` (no API key), or optionally the YouTube Data API; imports via yt-dlp + FFmpeg into this
+   device's library, or into the server's `imports_dir` (indexed, then synced to all clients — the
+   Android path). yt-dlp is found on PATH or installed on request as a checksum-verified managed copy;
+   it is never bundled. See [YOUTUBE.md](YOUTUBE.md). Optional LRCLIB lyric lookup.
+3. Arbitrary-URL import through the same yt-dlp pipeline.
 4. Paired-device transfer (`susic-sync`).
 
 ## Transfer protocol

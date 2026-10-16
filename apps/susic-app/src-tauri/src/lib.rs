@@ -6,6 +6,7 @@ mod importer;
 mod mpris;
 mod net_commands;
 mod server;
+mod youtube;
 
 use commands::*;
 use controller::Controller;
@@ -13,6 +14,7 @@ use net_commands::*;
 use server::*;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+use youtube::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -128,6 +130,8 @@ pub fn run() {
             write_text_file,
             read_text_file,
             ytdlp_status,
+            ytdlp_install,
+            ytdlp_update,
             import_url,
             list_jobs,
             cancel_job,

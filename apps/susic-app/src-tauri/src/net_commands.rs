@@ -1,145 +1,17 @@
-//! yt-dlp import (desktop) and paired-device transfer commands.
+//! Paired-device transfer commands (YouTube search/import lives in `youtube.rs`).
 
 use crate::commands::{free_space, Ctl, Extras};
 use crate::controller::Controller;
-use crate::importer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use susic_library::{ImportJob, Upsert};
+use susic_library::Upsert;
 use susic_sync::{Manifest, Provider, ServerEvent};
 use tauri::State;
 
 type R<T> = Result<T, String>;
-
-// ---- yt-dlp -------------------------------------------------------------------
-
-#[tauri::command]
-pub fn ytdlp_status() -> serde_json::Value {
-    if cfg!(target_os = "android") {
-        return json!({ "supported": false, "ytdlp": null, "ffmpeg": null });
-    }
-    let s = susic_import::ytdlp::tool_status();
-    json!({ "supported": true, "ytdlp": s.ytdlp, "ffmpeg": s.ffmpeg })
-}
-
-#[derive(Deserialize)]
-pub struct UrlImport {
-    url: String,
-    format: String,
-    quality: u32,
-    dest_dir: Option<String>,
-}
-
-#[tauri::command]
-pub fn import_url(c: Ctl, ex: State<Extras>, req: UrlImport) -> R<i64> {
-    if cfg!(target_os = "android") {
-        return Err(
-            "URL import is not available on Android. Transfer music from Susic Desktop instead."
-                .into(),
-        );
-    }
-    susic_import::ytdlp::validate_url(&req.url)?;
-    let dest = req
-        .dest_dir
-        .filter(|d| !d.trim().is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            c.with_lib(|l| l.get_setting("import_dir"))
-                .ok()
-                .flatten()
-                .map(PathBuf::from)
-        })
-        .unwrap_or_else(|| c.music_dir.clone());
-    // Duplicate URL guard: skip if the same URL is queued/running.
-    let dup = c
-        .with_lib(|l| l.import_jobs())?
-        .iter()
-        .any(|j| j.url == req.url && (j.status == "queued" || j.status == "running"));
-    if dup {
-        return Err("This URL is already in the import queue".into());
-    }
-    let id = c.with_lib(|l| l.add_import_job(&req.url))?;
-    let cancel = Arc::new(AtomicBool::new(false));
-    ex.job_cancels.lock().unwrap().insert(id, cancel.clone());
-    let ctl = c.inner().clone();
-    std::thread::spawn(move || run_job(ctl, id, req.url, req.format, req.quality, dest, cancel));
-    c.emit("jobs://changed", json!({}));
-    Ok(id)
-}
-
-fn run_job(
-    c: Arc<Controller>,
-    id: i64,
-    url: String,
-    format: String,
-    quality: u32,
-    dest: PathBuf,
-    cancel: Arc<AtomicBool>,
-) {
-    let set = |status: &str, p: f64, msg: &str| {
-        let _ = c.with_lib(|l| l.update_import_job(id, status, p, msg));
-        c.emit("jobs://changed", json!({}));
-    };
-    set("running", 0.0, "Starting…");
-    let opts = susic_import::ytdlp::Options {
-        dest_dir: dest,
-        format,
-        quality,
-    };
-    let mut last = std::time::Instant::now();
-    let res = susic_import::ytdlp::run(&url, &opts, cancel.clone(), &mut |ev| {
-        if let susic_import::ytdlp::Event::Progress(p, line) = ev {
-            if last.elapsed().as_millis() > 300 {
-                last = std::time::Instant::now();
-                let _ = c.with_lib(|l| l.update_import_job(id, "running", p, &line));
-                c.emit("jobs://changed", json!({}));
-            }
-        }
-    });
-    match res {
-        Ok(files) => {
-            let sum = importer::run_import(&c, files, "yt-dlp", true);
-            if sum.added + sum.updated == 0 && sum.duplicates > 0 {
-                set("done", 1.0, "Already in your library");
-            } else if !sum.failed.is_empty() && sum.added == 0 {
-                set("failed", 1.0, &sum.failed[0]);
-            } else {
-                set(
-                    "done",
-                    1.0,
-                    &format!("Imported {} track(s)", sum.added + sum.updated),
-                );
-            }
-            c.emit("library://changed", json!({ "reason": "import" }));
-            c.emit("import://notify", json!({ "message": "Import complete" }));
-        }
-        Err(e) if e == "cancelled" => set("cancelled", 0.0, "Cancelled"),
-        Err(e) => set("failed", 0.0, &e),
-    }
-}
-
-#[tauri::command]
-pub fn list_jobs(c: Ctl) -> R<Vec<ImportJob>> {
-    c.with_lib(|l| l.import_jobs())
-}
-
-#[tauri::command]
-pub fn cancel_job(ex: State<Extras>, id: i64) {
-    if let Some(f) = ex.job_cancels.lock().unwrap().get(&id) {
-        f.store(true, Ordering::SeqCst);
-    }
-}
-
-#[tauri::command]
-pub fn clear_jobs(c: Ctl) -> R<()> {
-    c.with_lib(|l| l.clear_finished_jobs())?;
-    c.emit("jobs://changed", json!({}));
-    Ok(())
-}
 
 // ---- sender ---------------------------------------------------------------------
 
@@ -479,75 +351,4 @@ fn receive(
     }
     client.close();
     Ok(json!({ "added": added, "skipped": skipped, "failed": failed }))
-}
-
-// ---- YouTube discovery -------------------------------------------------------
-
-#[derive(Serialize)]
-pub struct YtResult {
-    id: String,
-    title: String,
-    channel: String,
-    thumb: String,
-}
-
-/// Search via the official YouTube Data API using the user's own key. Results
-/// are returned transiently and never stored; they link out to YouTube.
-#[tauri::command]
-pub async fn youtube_search(c: Ctl<'_>, query: String) -> R<Vec<YtResult>> {
-    let (enabled, key) = c.with_lib(|l| {
-        Ok((
-            l.get_setting("youtube_enabled")?,
-            l.get_setting("youtube_api_key")?,
-        ))
-    })?;
-    if enabled.as_deref() != Some("true") {
-        return Err("YouTube discovery is turned off in Settings".into());
-    }
-    let key = key
-        .filter(|k| !k.trim().is_empty())
-        .ok_or("Add your YouTube Data API key in Settings")?;
-    tauri::async_runtime::spawn_blocking(move || -> R<Vec<YtResult>> {
-        let resp = ureq::get("https://www.googleapis.com/youtube/v3/search")
-            .query("part", "snippet")
-            .query("type", "video")
-            .query("videoCategoryId", "10")
-            .query("maxResults", "10")
-            .query("q", &query)
-            .query("key", key.trim())
-            .timeout(Duration::from_secs(10))
-            .call()
-            .map_err(|e| match e {
-                ureq::Error::Status(403, _) => {
-                    "YouTube refused the request — check your API key and quota".to_string()
-                }
-                ureq::Error::Status(400, _) => "YouTube rejected the API key".to_string(),
-                e => format!("YouTube request failed: {e}"),
-            })?;
-        let v: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;
-        Ok(v["items"]
-            .as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|i| {
-                        Some(YtResult {
-                            id: i["id"]["videoId"].as_str()?.to_string(),
-                            title: i["snippet"]["title"].as_str()?.to_string(),
-                            channel: i["snippet"]["channelTitle"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                            thumb: i["snippet"]["thumbnails"]["default"]["url"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default())
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }

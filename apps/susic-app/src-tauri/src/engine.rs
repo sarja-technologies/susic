@@ -107,10 +107,10 @@ pub mod desktop {
         }
     }
 
-    trait ReadSeek: std::io::Read + std::io::Seek + Send + Sync {}
+    pub(crate) trait ReadSeek: std::io::Read + std::io::Seek + Send + Sync {}
     impl<T: std::io::Read + std::io::Seek + Send + Sync> ReadSeek for T {}
 
-    fn open(media: &MediaInfo) -> Result<Decoder<Box<dyn ReadSeek>>, String> {
+    pub(crate) fn open(media: &MediaInfo) -> Result<Decoder<Box<dyn ReadSeek>>, String> {
         let path = media.path.as_str();
         let (reader, len, ext): (Box<dyn ReadSeek>, u64, Option<String>) =
             if path.starts_with("http://") || path.starts_with("https://") {
@@ -438,6 +438,61 @@ mod tests {
             d.extend(v.to_le_bytes());
         }
         std::fs::write(path, d).unwrap();
+    }
+
+    /// Plays a real file (e.g. a YouTube import) on the real output device for
+    /// a few seconds. Opt-in: `SUSIC_AUDIO_FILE=… SUSIC_AUDIO_VOLUME=0.02
+    /// cargo test -p susic-app -- --ignored real_file_on_device`.
+    #[test]
+    #[ignore]
+    fn real_file_on_device() {
+        let path = std::env::var("SUSIC_AUDIO_FILE").expect("SUSIC_AUDIO_FILE");
+        let vol: f32 = std::env::var("SUSIC_AUDIO_VOLUME")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.02);
+        let secs: u64 = std::env::var("SUSIC_AUDIO_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(6);
+        let events = Arc::new(Mutex::new(Vec::<EngineEvent>::new()));
+        let ev = events.clone();
+        let eng = DesktopEngine::new(Arc::new(move |e| ev.lock().unwrap().push(e)));
+        eng.set_volume(vol);
+        let ext = std::path::Path::new(&path)
+            .extension()
+            .map(|e| e.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        eng.load(
+            MediaInfo {
+                path,
+                format: ext,
+                ..Default::default()
+            },
+            0,
+            true,
+        );
+        std::thread::sleep(Duration::from_secs(secs));
+        eng.stop();
+        let ev = events.lock().unwrap();
+        assert!(
+            !ev.iter().any(|e| matches!(e, EngineEvent::Error(_))),
+            "{ev:?}"
+        );
+        let last = ev
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                EngineEvent::State {
+                    playing: true,
+                    position_ms,
+                    ..
+                } => Some(*position_ms),
+                _ => None,
+            })
+            .expect("never reported playing");
+        eprintln!("played to {last} ms at volume {vol}");
+        assert!(last as u64 >= (secs - 1) * 1000, "position {last}");
     }
 
     /// Requires a working audio output device, so it is opt-in:

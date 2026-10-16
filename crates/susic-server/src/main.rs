@@ -15,10 +15,12 @@ COMMANDS:
     revoke <ID>      Revoke a paired device
     purge-missing    Permanently forget tracks whose files are gone
     check            Validate configuration and paths
+    ytdlp-install    Install Susic's managed, checksum-verified yt-dlp
+    ytdlp-update     Update yt-dlp (managed copy, or `yt-dlp -U`)
     version
 
 CONFIG: --config FILE (TOML), or SUSIC_BIND, SUSIC_MUSIC_DIR, SUSIC_DATA_DIR,
-SUSIC_SCAN_INTERVAL environment variables. Defaults to /etc/susic/server.toml if present.";
+SUSIC_SCAN_INTERVAL, SUSIC_YTDLP_ENABLED, SUSIC_IMPORTS_DIR environment variables. Defaults to /etc/susic/server.toml if present.";
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -78,6 +80,49 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
             );
             println!("data_dir:    {}", cfg.data_dir.display());
             println!("scan every:  {}s", cfg.scan_interval_secs);
+            let t = susic_import::ytdlp::tool_status(Some(&cfg.tools_dir()));
+            println!(
+                "youtube:     {}",
+                if cfg.ytdlp_enabled {
+                    "enabled"
+                } else {
+                    "disabled (ytdlp_enabled = false)"
+                }
+            );
+            if cfg.ytdlp_enabled {
+                println!(
+                    "  imports:   {} ({})",
+                    cfg.imports_path().display(),
+                    match susic_server::imports::check_writable(&cfg.imports_path()) {
+                        // `check` runs outside systemd's sandbox; the service reports
+                        // its own view in its startup log and GET /api/v1/youtube.
+                        Ok(()) => "writable by this user; under systemd also see ReadWritePaths"
+                            .to_string(),
+                        Err(e) => format!("NOT WRITABLE: {e}"),
+                    }
+                );
+                println!(
+                    "  yt-dlp:    {}",
+                    match (&t.ytdlp, &t.version) {
+                        (Some(p), v) => format!(
+                            "{p} ({}){}",
+                            v.as_deref().unwrap_or("?"),
+                            if t.managed { " [managed]" } else { "" }
+                        ),
+                        (None, _) => "MISSING — run `susic-server ytdlp-install`".into(),
+                    }
+                );
+                println!(
+                    "  ffmpeg:    {}",
+                    t.ffmpeg.as_deref().unwrap_or("MISSING — install ffmpeg")
+                );
+                println!(
+                    "  js runtime: {}",
+                    t.js_runtime
+                        .as_deref()
+                        .unwrap_or("none (recommended: deno or node, see yt-dlp EJS wiki)")
+                );
+            }
             if !cfg.music_dir.is_dir() {
                 return Err("music_dir does not exist or is not a directory".into());
             }
@@ -138,6 +183,15 @@ fn run(cmd: String, args: Vec<String>, cfg: Config) -> Result<(), String> {
             );
             Ok(())
         }
+        "ytdlp-install" => {
+            let v = susic_import::ytdlp::install_managed(&cfg.tools_dir())?;
+            println!("installed yt-dlp {v} to {}", cfg.tools_dir().display());
+            Ok(())
+        }
+        "ytdlp-update" => {
+            println!("{}", susic_import::ytdlp::update(&cfg.tools_dir())?);
+            Ok(())
+        }
         "serve" => serve(cfg),
         other => Err(format!("unknown command '{other}'\n\n{USAGE}")),
     }
@@ -166,6 +220,11 @@ fn serve(cfg: Config) -> Result<(), String> {
                 live
             ),
         );
+        if cfg.ytdlp_enabled && cfg.music_dir.is_dir() {
+            if let Err(e) = susic_server::imports::check_writable(&cfg.imports_path()) {
+                susic_server::log("warn", &format!("YouTube import will fail: {e}"));
+            }
+        }
         if !cfg.music_dir.is_dir() {
             susic_server::log(
                 "warn",

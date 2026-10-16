@@ -26,6 +26,7 @@ pub struct AppState {
     pub cancel: AtomicBool,
     pub last_scan: Mutex<Option<(i64, ScanReport)>>,
     pub last_scan_error: Mutex<Option<String>>,
+    pub imports: crate::imports::Imports,
     pair_failures: Mutex<(u32, Instant)>,
 }
 
@@ -39,6 +40,7 @@ impl AppState {
             cancel: AtomicBool::new(false),
             last_scan: Mutex::new(None),
             last_scan_error: Mutex::new(None),
+            imports: Default::default(),
             pair_failures: Mutex::new((0, Instant::now())),
         })
     }
@@ -106,6 +108,12 @@ pub fn router(state: S) -> Router {
         .route("/devices", get(list_devices))
         .route("/devices/{id}", delete(revoke_device))
         .route("/scan", post(trigger_scan))
+        .route("/youtube", get(youtube_caps))
+        .route("/youtube/search", get(youtube_search))
+        .route("/youtube/update", post(youtube_update))
+        .route("/imports", get(list_imports))
+        .route("/imports", post(create_import))
+        .route("/imports/{id}", delete(delete_import))
         .layer(middleware::from_fn_with_state(state.clone(), auth));
     Router::new()
         .route("/health", get(health))
@@ -456,4 +464,118 @@ async fn trigger_scan(State(s): State<S>) -> StatusCode {
         s2.run_scan();
     });
     StatusCode::ACCEPTED
+}
+
+// ---- YouTube search / import (opt-in, see imports.rs) ----
+async fn youtube_caps(State(s): State<S>) -> ApiResult<Json<crate::imports::Capabilities>> {
+    blocking(&s, |st| Ok(Json(crate::imports::capabilities(st)))).await
+}
+
+async fn youtube_search(
+    State(s): State<S>,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let query = q.get("q").cloned().unwrap_or_default();
+    if query.trim().is_empty() || query.len() > 300 {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "q must be 1-300 characters".into(),
+        ));
+    }
+    let opts = susic_import::ytdlp::SearchOptions {
+        limit: q.get("limit").and_then(|v| v.parse().ok()).unwrap_or(12),
+        creative_commons: q
+            .get("cc")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false),
+    };
+    // Reserve a slot before taking a blocking thread; never queue behind other searches.
+    struct Slot(S);
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            self.0.imports.searches.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    if s.imports.searches.fetch_add(1, Ordering::SeqCst) >= crate::imports::MAX_SEARCHES {
+        s.imports.searches.fetch_sub(1, Ordering::SeqCst);
+        return Err(ApiError(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Another search is still running on the server — try again in a moment.".into(),
+        ));
+    }
+    let slot = Slot(s.clone());
+    blocking(&s, move |st| {
+        let _slot = slot;
+        if let Some(why) = crate::imports::unavailable(st, false) {
+            return Err(ApiError(StatusCode::FORBIDDEN, why));
+        }
+        let results = susic_import::ytdlp::search(&crate::imports::tools(st), &query, &opts)
+            .map_err(|e| ApiError(StatusCode::FAILED_DEPENDENCY, e))?;
+        Ok(Json(serde_json::json!({ "results": results })))
+    })
+    .await
+}
+
+async fn youtube_update(State(s): State<S>) -> ApiResult<Json<serde_json::Value>> {
+    if !s.cfg.ytdlp_enabled {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "YouTube features are turned off on this server".into(),
+        ));
+    }
+    if s.imports.updating.swap(true, Ordering::SeqCst) {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "yt-dlp is already being updated".into(),
+        ));
+    }
+    let r = blocking(&s, |st| {
+        let dir = st.cfg.tools_dir();
+        let msg = if crate::imports::tools(st).ytdlp.is_none() {
+            susic_import::ytdlp::install_managed(&dir).map(|v| format!("Installed yt-dlp {v}"))
+        } else {
+            susic_import::ytdlp::update(&dir)
+        }
+        .map_err(|e| ApiError(StatusCode::FAILED_DEPENDENCY, e))?;
+        crate::log("info", &msg);
+        Ok(Json(serde_json::json!({ "message": msg })))
+    })
+    .await;
+    s.imports.updating.store(false, Ordering::SeqCst);
+    r
+}
+
+async fn list_imports(State(s): State<S>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "jobs": s.imports.list() }))
+}
+
+async fn create_import(
+    State(s): State<S>,
+    Json(req): Json<crate::imports::NewJob>,
+) -> ApiResult<(StatusCode, Json<crate::imports::Job>)> {
+    let s2 = s.clone();
+    let r = tokio::task::spawn_blocking(move || crate::imports::submit(&s2, req))
+        .await
+        .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "task failed".into()))?;
+    use crate::imports::Refused;
+    match r {
+        Ok(job) => Ok((StatusCode::ACCEPTED, Json(job))),
+        Err(e) => {
+            let code = match &e {
+                Refused::Unavailable(_) => StatusCode::FORBIDDEN,
+                Refused::Invalid(_) => StatusCode::BAD_REQUEST,
+                Refused::Busy(_) => StatusCode::TOO_MANY_REQUESTS,
+                Refused::NoSpace(_) => StatusCode::INSUFFICIENT_STORAGE,
+            };
+            Err(ApiError(code, e.to_string()))
+        }
+    }
+}
+
+async fn delete_import(State(s): State<S>, Path(id): Path<u64>) -> ApiResult<StatusCode> {
+    if s.imports.cancel_or_remove(id) {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(not_found("import"))
+    }
 }
