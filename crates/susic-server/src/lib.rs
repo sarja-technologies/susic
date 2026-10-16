@@ -4,6 +4,7 @@
 pub mod api;
 pub mod config;
 pub mod db;
+pub mod imports;
 pub mod scan;
 
 use rand::RngCore;

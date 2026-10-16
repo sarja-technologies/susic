@@ -6,7 +6,7 @@ A fast, private music player for Ubuntu and Android that treats your own music a
 play local files, and optionally stream the library on your home server from anywhere through Tailscale.
 No account, no telemetry. Your music stays yours.
 
-> **Status: 0.2.0 (pre-release).** See [Known limitations](docs/KNOWN_LIMITATIONS.md) and the
+> **Status: 0.3.0 (pre-release).** See [Known limitations](docs/KNOWN_LIMITATIONS.md) and the
 > verification tables in [Android](docs/ANDROID.md) and [Server](docs/SERVER.md) for exactly what has
 > and has not been tested.
 
@@ -31,8 +31,10 @@ No account, no telemetry. Your music stays yours.
   and playlists, runs under systemd.
 * **Listen anywhere** over [Tailscale](docs/TAILSCALE.md) — never exposed to the public internet.
   Buffered streaming that reconnects and resumes, offline downloads with a size limit.
-* **Unified search** across your device, your server and — as clearly-labelled *discovery only* results —
-  YouTube's catalogue via the official API ([docs/YOUTUBE.md](docs/YOUTUBE.md)).
+* **Unified search** across your device, your server and YouTube — no Google account or API key
+  (yt-dlp). Import music you have the right to download (e.g. Creative Commons) to this device or to
+  your server, with progress, cancel, format/quality choice, tags and cover art; Android searches and
+  imports through your server ([docs/YOUTUBE.md](docs/YOUTUBE.md)).
 * **Home**: quick-launch speed dial (pin albums/artists/playlists), continue listening, recently played,
   frequently played, favourites.
 * **Android**: Media3 background playback, notification, lock-screen/Bluetooth controls.
@@ -43,7 +45,7 @@ No account, no telemetry. Your music stays yours.
 **Ubuntu / Debian**
 
 ```bash
-sudo apt install ./Susic_0.2.0_amd64.deb      # or run the .AppImage
+sudo apt install ./Susic_0.3.0_amd64.deb      # or run the .AppImage
 ```
 
 **Android**: sideload the APK ([docs/ANDROID.md](docs/ANDROID.md)).

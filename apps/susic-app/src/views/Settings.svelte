@@ -5,6 +5,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import Icon from '../components/Icon.svelte';
   import ServerPanel from '../components/ServerPanel.svelte';
+  import YtTools from '../components/YtTools.svelte';
 
   let storage = $state<StorageInfo | null>(null);
   let folders = $state<string[]>([]);
@@ -15,8 +16,10 @@
   $effect(() => { app.libraryVersion; void load(); });
 
   const lrclib = $derived(app.setting('lrclib_enabled') === 'true');
-  const yt = $derived(app.setting('youtube_enabled') === 'true');
+  const yt = $derived(app.ytEnabled);
   let ytKey = $state(app.setting('youtube_api_key'));
+  const FORMATS: [string, string][] = [['m4a', 'M4A (AAC) — plays everywhere'], ['mp3', 'MP3'], ['flac', 'FLAC (lossless container)'], ['wav', 'WAV'],
+    ['opus', 'Opus — Android only (desktop can’t play Opus)'], ['best', 'Original (no re-encode; AAC where available)']];
 
   async function addFolder() { await app.importFolder(); await load(); }
   async function removeFolder(p: string) { await api.removeLibraryFolder(p); await load(); }
@@ -88,12 +91,33 @@
   </section>
 
   <section class="card">
-    <h2>YouTube discovery</h2>
-    <label class="tg"><input type="checkbox" checked={yt} onchange={(e) => app.saveSetting('youtube_enabled', String(e.currentTarget.checked))} />
-      <span>Enable YouTube search in Search<br /><span class="faint small">Uses your own YouTube Data API key and counts against your quota. Results are discovery-only catalogue entries that open in YouTube; Susic does not play, download or store them.</span></span></label>
+    <h2>YouTube search &amp; import</h2>
+    <label class="tg"><input type="checkbox" checked={yt} onchange={async (e) => { await app.saveSetting('youtube_enabled', String(e.currentTarget.checked)); void app.refreshYt(); }} />
+      <span>Show YouTube results in Search<br /><span class="faint small">Your search words are sent to YouTube (directly, or through your server on Android). No Google account or API key is needed.</span></span></label>
     {#if yt}
-      <input class="field" type="password" placeholder="YouTube Data API key" bind:value={ytKey} aria-label="YouTube Data API key"
-        onchange={() => app.saveSetting('youtube_api_key', ytKey.trim())} autocomplete="off" />
+      <div class="acts" role="radiogroup" aria-label="Search backend">
+        {#each [['ytdlp', 'yt-dlp (no account)'], ['api', 'YouTube Data API (your key)']] as [v, l]}
+          <button class="chip" role="radio" class:active={app.ytBackend === v} aria-checked={app.ytBackend === v} onclick={() => app.saveSetting('youtube_backend', v)}>{l}</button>
+        {/each}
+      </div>
+      {#if app.ytBackend === 'api'}
+        <input class="field" type="password" placeholder="YouTube Data API key" bind:value={ytKey} aria-label="YouTube Data API key"
+          onchange={() => app.saveSetting('youtube_api_key', ytKey.trim())} autocomplete="off" />
+        <p class="faint small">Optional. Uses the official API (100 of your 10,000 daily quota units per search, so it searches only when you press Enter). Results don’t include durations. Importing still uses yt-dlp.</p>
+      {/if}
+      <YtTools />
+      <div class="opts">
+        <label>Import format
+          <select class="field" value={app.setting('import_format', 'm4a')} onchange={(e) => app.saveSetting('import_format', e.currentTarget.value)}>
+            {#each FORMATS as [v, l]}<option value={v}>{l}</option>{/each}
+          </select></label>
+        <label>Quality
+          <select class="field" value={app.setting('import_quality', '0')} disabled={!['mp3', 'm4a', 'opus'].includes(app.setting('import_format', 'm4a'))}
+            onchange={(e) => app.saveSetting('import_quality', e.currentTarget.value)}>
+            <option value="0">Best</option><option value="320">320 kbps</option><option value="256">256 kbps</option><option value="192">192 kbps</option><option value="128">128 kbps</option>
+          </select></label>
+      </div>
+      <p class="faint small">Only import content you have the right to download: your own uploads, Creative Commons or public-domain works, or content whose owner permits it. Susic never bypasses DRM, sign-in, age, membership or region restrictions, and never uses your Google account; restricted videos fail with an explanation. YouTube’s terms may restrict downloading — you are responsible for how you use this feature.</p>
     {/if}
   </section>
 
@@ -106,7 +130,7 @@
 
   <section class="card">
     <h2>About</h2>
-    <p class="muted">Susic 0.2.0 · Local-first. No account, no telemetry. The server is optional and self-hosted.</p>
+    <p class="muted">Susic 0.3.0 · Local-first. No account, no telemetry. The server is optional and self-hosted.</p>
   </section>
 </div>
 
@@ -122,4 +146,7 @@
   .tg { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
   .tg input { margin-top: 4px; accent-color: var(--accent); width: 18px; height: 18px; }
   .small { font-size: 12px; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+  @media (max-width: 760px) { .opts { grid-template-columns: 1fr; } }
 </style>

@@ -6,6 +6,8 @@ Wants=network-online.target
 # If the music SSD is a separate mount, add a drop-in (systemctl edit susic-server):
 #   [Unit]
 #   RequiresMountsFor=/mnt/music
+# With ytdlp_enabled = true, also allow writes to the imports folder (drop-in [Service]):
+#   ReadWritePaths=/srv/music/Susic\x20Imports
 
 [Service]
 Type=simple

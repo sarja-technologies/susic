@@ -107,10 +107,10 @@ pub mod desktop {
         }
     }
 
-    trait ReadSeek: std::io::Read + std::io::Seek + Send + Sync {}
+    pub(crate) trait ReadSeek: std::io::Read + std::io::Seek + Send + Sync {}
     impl<T: std::io::Read + std::io::Seek + Send + Sync> ReadSeek for T {}
 
-    fn open(media: &MediaInfo) -> Result<Decoder<Box<dyn ReadSeek>>, String> {
+    pub(crate) fn open(media: &MediaInfo) -> Result<Decoder<Box<dyn ReadSeek>>, String> {
         let path = media.path.as_str();
         let (reader, len, ext): (Box<dyn ReadSeek>, u64, Option<String>) =
             if path.starts_with("http://") || path.starts_with("https://") {

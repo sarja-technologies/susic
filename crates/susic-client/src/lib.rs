@@ -120,6 +120,51 @@ pub struct ServerStatus {
     pub scanning: bool,
 }
 
+/// What the server offers for YouTube search/import (`GET /youtube`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct YoutubeCaps {
+    pub enabled: bool,
+    pub ytdlp: bool,
+    pub version: Option<String>,
+    pub ffmpeg: bool,
+    pub js_runtime: Option<String>,
+    pub imports_dir: String,
+}
+
+impl YoutubeCaps {
+    pub fn can_search(&self) -> bool {
+        self.enabled && self.ytdlp
+    }
+    pub fn can_import(&self) -> bool {
+        self.enabled && self.ytdlp && self.ffmpeg
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct YoutubeResult {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub artist: String,
+    pub channel: String,
+    pub duration_ms: Option<i64>,
+    pub thumb: String,
+    pub live: bool,
+}
+
+/// A server-side import job (`/imports`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RemoteImport {
+    pub id: u64,
+    pub url: String,
+    pub title: String,
+    pub status: String,
+    pub progress: f64,
+    pub message: String,
+    pub license: Option<String>,
+    pub track_id: Option<i64>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Paired {
     pub token: String,
@@ -241,6 +286,96 @@ impl Server {
             .send_json(serde_json::json!({ "favourite": fav }))
             .map(|_| ())
             .map_err(map_err)
+    }
+
+    /// `None` when the server predates YouTube support.
+    pub fn youtube_caps(&self) -> Result<Option<YoutubeCaps>> {
+        match self.get("/youtube").call() {
+            Ok(r) => r
+                .into_json()
+                .map(Some)
+                .map_err(|e| Error::Server(e.to_string())),
+            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(e) => Err(map_err(e)),
+        }
+    }
+
+    pub fn youtube_search(
+        &self,
+        query: &str,
+        creative_commons: bool,
+        limit: usize,
+    ) -> Result<Vec<YoutubeResult>> {
+        #[derive(Deserialize)]
+        struct R {
+            results: Vec<YoutubeResult>,
+        }
+        let r: R = self
+            .get("/youtube/search")
+            .query("q", query)
+            .query("cc", if creative_commons { "1" } else { "0" })
+            .query("limit", &limit.to_string())
+            .timeout(Duration::from_secs(60))
+            .call()
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))?;
+        Ok(r.results)
+    }
+
+    /// Install or update the server's yt-dlp; returns a status message.
+    pub fn youtube_update(&self) -> Result<String> {
+        let v: serde_json::Value = agent()
+            .post(&format!("{}/api/v1/youtube/update", self.base))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .timeout(Duration::from_secs(600))
+            .call()
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))?;
+        Ok(v["message"].as_str().unwrap_or("").to_string())
+    }
+
+    pub fn start_import(
+        &self,
+        url: &str,
+        format: &str,
+        quality: u32,
+        title: &str,
+    ) -> Result<RemoteImport> {
+        agent()
+            .post(&format!("{}/api/v1/imports", self.base))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .send_json(serde_json::json!({ "url": url, "format": format, "quality": quality, "title": title }))
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))
+    }
+
+    pub fn imports(&self) -> Result<Vec<RemoteImport>> {
+        #[derive(Deserialize)]
+        struct R {
+            jobs: Vec<RemoteImport>,
+        }
+        let r: R = self
+            .get("/imports")
+            .call()
+            .map_err(map_err)?
+            .into_json()
+            .map_err(|e| Error::Server(e.to_string()))?;
+        Ok(r.jobs)
+    }
+
+    pub fn cancel_import(&self, id: u64) -> Result<()> {
+        agent()
+            .delete(&format!("{}/api/v1/imports/{}", self.base, id))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .call()
+            .map(|_| ())
+            .or_else(|e| match e {
+                ureq::Error::Status(404, _) => Ok(()),
+                e => Err(map_err(e)),
+            })
     }
 
     pub fn stream_url(&self, id: i64) -> String {

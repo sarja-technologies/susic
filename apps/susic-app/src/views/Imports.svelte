@@ -1,27 +1,21 @@
 <script lang="ts">
-  import { api, type ImportJob } from '../lib/api';
+  import { api, type ImportJob, type ImportTarget } from '../lib/api';
   import { app } from '../lib/store.svelte';
-  import { on } from '../lib/api';
   import { open } from '@tauri-apps/plugin-dialog';
   import Icon from '../components/Icon.svelte';
+  import YtTools from '../components/YtTools.svelte';
 
-  let jobs = $state<ImportJob[]>([]);
-  let tools = $state<{ supported: boolean; ytdlp: string | null; ffmpeg: string | null } | null>(null);
   let url = $state('');
-  let format = $state(app.setting('import_format', 'mp3'));
-  let quality = $state(Number(app.setting('import_quality', '192')));
+  let format = $state(app.setting('import_format', 'm4a'));
+  let quality = $state(Number(app.setting('import_quality', '0')));
   let dest = $state(app.setting('import_dir', ''));
   let busy = $state(false);
   let ack = $state(app.setting('import_ack') === 'true');
+  let target = $state<ImportTarget>(app.isAndroid ? 'server' : 'device');
 
-  async function load() { jobs = await api.jobs(); }
-  $effect(() => {
-    void api.ytdlpStatus().then((t) => (tools = t));
-    void load();
-    let un: (() => void) | undefined;
-    void on('jobs://changed', load).then((u) => (un = u));
-    return () => un?.();
-  });
+  const targets = $derived(app.importTargets);
+  const canImport = $derived(targets.includes(target));
+  $effect(() => { if (targets.length && !targets.includes(target)) target = targets[0]; });
 
   async function pickDest() {
     const d = await open({ directory: true, multiple: false });
@@ -33,13 +27,14 @@
       await app.saveSetting('import_format', format);
       await app.saveSetting('import_quality', String(quality));
       await app.saveSetting('import_ack', 'true');
-      await api.importUrl({ url: url.trim(), format, quality, dest_dir: dest || undefined });
+      await api.importUrl({ url: url.trim(), format, quality, target, dest_dir: target === 'device' ? dest || undefined : undefined });
       url = '';
-      await load();
+      await app.refreshJobs();
     } catch (e) { app.notify(String(e), 'error'); }
     finally { busy = false; }
   }
   const pct = (j: ImportJob) => Math.round(j.progress * 100);
+  const active = (j: ImportJob) => j.status === 'running' || j.status === 'queued';
 </script>
 
 <div class="page">
@@ -56,66 +51,67 @@
     {#if !app.isAndroid}<p class="faint small">Tip: you can also drag audio files or folders onto the Susic window.</p>{/if}
   </section>
 
-  {#if tools?.supported}
-    <section class="card">
-      <h2>Import from a URL</h2>
-      <p class="muted">Uses the optional <strong>yt-dlp</strong> and <strong>FFmpeg</strong> tools installed on your computer. Only import content you are authorised to download and where the source permits it. Susic does not bypass DRM, sign-in or payment restrictions.</p>
-      {#if !tools.ytdlp || !tools.ffmpeg}
-        <div class="warn">
-          {#if !tools.ytdlp}<div><Icon name="close" size={16} /> yt-dlp was not found on your PATH.</div>{/if}
-          {#if !tools.ffmpeg}<div><Icon name="close" size={16} /> FFmpeg was not found on your PATH.</div>{/if}
-          <div class="faint small">Install them (for example <code>sudo apt install ffmpeg yt-dlp</code> or <code>pipx install yt-dlp</code>), then reopen this page.</div>
-        </div>
-      {/if}
-      <div class="form">
-        <input class="field" type="url" placeholder="https://…" bind:value={url} aria-label="URL to import"
-          onkeydown={(e) => e.key === 'Enter' && ack && url.trim() && tools?.ytdlp && start()} />
-        <div class="opts">
-          <label>Format
-            <select class="field" bind:value={format}>
-              <option value="mp3">MP3</option><option value="m4a">M4A (AAC)</option><option value="opus">Opus</option>
-              <option value="flac">FLAC</option><option value="wav">WAV</option><option value="best">Best available (original)</option>
-            </select></label>
-          <label>Quality
-            <select class="field" bind:value={quality} disabled={!['mp3', 'm4a', 'opus'].includes(format)}>
-              <option value={0}>Best</option><option value={320}>320 kbps</option><option value={256}>256 kbps</option><option value={192}>192 kbps</option><option value={128}>128 kbps</option>
-            </select></label>
+  <section class="card">
+    <h2>Import from YouTube or another URL</h2>
+    <p class="muted">Uses <strong>yt-dlp</strong> and <strong>FFmpeg</strong> — on this computer, or on your Susic server. You can also search YouTube from <button class="linkish" onclick={() => app.go('search')}>Search</button> and import a result directly.
+      Only import content you have the right to download (your own uploads, Creative Commons or public-domain works, or content whose owner permits it). Susic does not bypass DRM, sign-in, age, membership or region restrictions.</p>
+    <YtTools />
+    <div class="form">
+      <input class="field" type="url" placeholder="https://www.youtube.com/watch?v=…" bind:value={url} aria-label="URL to import"
+        onkeydown={(e) => e.key === 'Enter' && ack && url.trim() && canImport && !busy && start()} />
+      <div class="opts">
+        <label>Import to
+          <select class="field" bind:value={target}>
+            {#if !app.isAndroid}<option value="device" disabled={!targets.includes('device')}>This device{targets.includes('device') ? '' : ' (install yt-dlp + FFmpeg)'}</option>{/if}
+            <option value="server" disabled={!targets.includes('server')}>My server{targets.includes('server') ? ' (all devices)' : ' (not available)'}</option>
+          </select></label>
+        <label>Format
+          <select class="field" bind:value={format}>
+            <option value="m4a">M4A (AAC) — plays everywhere</option><option value="mp3">MP3</option>
+            <option value="flac">FLAC</option><option value="wav">WAV</option>
+            <option value="opus">Opus — Android only</option><option value="best">Original (no re-encode)</option>
+          </select></label>
+        <label>Quality
+          <select class="field" bind:value={quality} disabled={!['mp3', 'm4a', 'opus'].includes(format)}>
+            <option value={0}>Best</option><option value={320}>320 kbps</option><option value={256}>256 kbps</option><option value={192}>192 kbps</option><option value={128}>128 kbps</option>
+          </select></label>
+        {#if target === 'device'}
           <label>Save to
             <div class="dest"><span class="field ellipsis">{dest || 'Susic music folder (default)'}</span>
               <button class="btn" onclick={pickDest}>Choose…</button></div></label>
-        </div>
-        <label class="ack"><input type="checkbox" bind:checked={ack} /> I have the right to download this content.</label>
-        <button class="btn primary" disabled={busy || !ack || !url.trim() || !tools.ytdlp || !tools.ffmpeg} onclick={start}>
-          <Icon name="download" size={18} /> Add to import queue</button>
+        {:else}
+          <p class="faint small span">Saved in “{app.yt?.server?.imports_dir ?? 'Susic Imports'}” in your server’s music folder, then synced to every device.</p>
+        {/if}
       </div>
-    </section>
-  {:else if app.isAndroid}
-    <section class="card">
-      <h2>URL import</h2>
-      <p class="muted">URL import isn’t available on Android. Import music on Susic Desktop, then transfer it to this phone over your local network.</p>
-      <button class="btn primary" onclick={() => app.go('transfer')}><Icon name="phone" size={18} /> Connect to Desktop</button>
-    </section>
-  {/if}
+      <label class="ack"><input type="checkbox" bind:checked={ack} /> I have the right to download this content.</label>
+      <button class="btn primary" disabled={busy || !ack || !url.trim() || !canImport} onclick={start}>
+        <Icon name="download" size={18} /> Add to import queue</button>
+    </div>
+  </section>
 
   <section class="section">
     <h2>Import queue
-      {#if jobs.some((j) => !['queued', 'running'].includes(j.status))}<button class="btn ghost small" onclick={() => api.clearJobs()}>Clear finished</button>{/if}
+      {#if app.jobs.some((j) => !active(j))}<button class="btn ghost small" onclick={() => api.clearJobs()}>Clear finished</button>{/if}
     </h2>
-    {#if jobs.length === 0}
+    {#if app.jobs.length === 0}
       <p class="muted">No imports yet.</p>
     {:else}
       <ul class="jobs">
-        {#each jobs as j (j.id)}
+        {#each app.jobs as j (j.id)}
           <li>
             <div class="top">
-              <span class="u ellipsis">{j.url}</span>
+              <Icon name={j.target === 'server' ? 'server' : 'device'} size={16} />
+              <span class="u ellipsis" title={j.url}>{j.title || j.url}</span>
               <span class="st {j.status}">{j.status}</span>
-              {#if j.status === 'running' || j.status === 'queued'}
+              {#if active(j)}
                 <button class="btn ghost small" onclick={() => api.cancelJob(j.id)}>Cancel</button>
+              {:else if j.status === 'done' && j.track_id}
+                <button class="btn ghost small" onclick={() => api.playTracks([j.track_id!])}><Icon name="play" size={14} /> Play</button>
               {/if}
             </div>
             {#if j.status === 'running'}<div class="bar"><div style="width:{pct(j)}%"></div></div>{/if}
-            {#if j.message && j.status !== 'running'}<div class="faint small ellipsis">{j.message}</div>{/if}
+            {#if j.message}<div class="faint small ellipsis" class:err={j.status === 'failed'}>{j.message}</div>{/if}
+            {#if j.license}<div class="faint small ellipsis">Licence (as declared by the uploader): {j.license}</div>{/if}
           </li>
         {/each}
       </ul>
@@ -128,21 +124,21 @@
   .card h2 { font-size: 18px; }
   .acts { display: flex; gap: 10px; flex-wrap: wrap; }
   .small { font-size: 12px; }
-  .warn { background: rgba(248, 113, 113, .1); border: 1px solid rgba(248, 113, 113, .3); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
-  code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
   .form { display: flex; flex-direction: column; gap: 12px; }
   .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .opts label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
-  .opts label:last-child { grid-column: 1 / -1; }
+  .opts label:last-child, .span { grid-column: 1 / -1; }
   .dest { display: flex; gap: 8px; align-items: center; }
   .dest .field { flex: 1; }
   .ack { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); }
+  .linkish { background: none; border: 0; padding: 0; color: var(--accent-2); font: inherit; cursor: pointer; text-decoration: underline; }
   .jobs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-  .jobs li { background: var(--surface); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .jobs li { background: var(--surface); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
   .top { display: flex; align-items: center; gap: 10px; }
   .u { flex: 1; }
   .st { font-size: 12px; text-transform: capitalize; padding: 2px 10px; border-radius: 99px; background: var(--surface-2); }
   .st.done { color: var(--ok); } .st.failed { color: var(--danger); }
+  .err { color: var(--danger); }
   .bar { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
   .bar div { height: 100%; background: var(--accent); transition: width .3s; }
   .btn.small { padding: 4px 12px; font-size: 12px; }

@@ -25,7 +25,10 @@ export interface Home {
 }
 export interface LyricLine { time_ms: number | null; text: string }
 export interface LyricsPayload { lyrics: { synced: boolean; lines: LyricLine[] }; offset_ms: number; raw: string | null }
-export interface ImportJob { id: number; url: string; status: string; progress: number; message: string; created_at: number }
+export interface ImportJob {
+  id: number; url: string; status: string; progress: number; message: string; created_at: number;
+  title: string; target: 'device' | 'server'; license: string; track_id: number | null;
+}
 export interface StorageInfo { library_bytes: number; artwork_cache_bytes: number; free_bytes: number; data_dir: string; music_dir: string }
 export interface RemoteTrack { id: number; title: string; artist: string; album: string; album_artist: string; duration_ms: number; track_no: number | null; disc_no: number | null; year: number | null; size_bytes: number; hash: string; format: string; has_artwork: boolean }
 export interface Manifest { device: string; tracks: RemoteTrack[]; playlists: { name: string; track_ids: number[] }[] }
@@ -34,7 +37,15 @@ export interface ServerInfo { configured: boolean; url: string | null; name: str
 export interface ServerStatus { name: string; version: string; tracks: number; bytes: number; revision: number; scanning: boolean }
 export interface CacheInfo { bytes: number; tracks: number; max_mb: number; auto: boolean }
 export interface ServerDevice { id: number; name: string; created_at: number; last_seen: number; revoked: boolean }
-export interface YtResult { id: string; title: string; channel: string; thumb: string }
+export interface YtResult { id: string; url: string; title: string; artist: string; channel: string; duration_ms: number | null; thumb: string; live: boolean }
+export interface YtSearch { source: 'device' | 'server' | 'api'; results: YtResult[] }
+export interface YtServerCaps { enabled: boolean; ytdlp: boolean; version: string | null; ffmpeg: boolean; js_runtime: string | null; imports_dir: string }
+export interface YtStatus {
+  supported: boolean; ytdlp: string | null; version: string | null; managed: boolean; ffmpeg: string | null;
+  js_runtime: string | null; can_install: boolean; server: YtServerCaps | null;
+}
+export type ImportTarget = 'device' | 'server';
+export interface ImportRequest { url: string; format: string; quality: number; dest_dir?: string; target?: ImportTarget; title?: string; thumb?: string }
 export interface ImportSummary { added: number; updated: number; duplicates: number; unchanged: number; failed: string[] }
 
 export const api = {
@@ -93,8 +104,10 @@ export const api = {
   platform: () => invoke<'android' | 'desktop'>('platform'),
   writeTextFile: (path: string, content: string) => invoke<void>('write_text_file', { path, content }),
   readTextFile: (path: string) => invoke<string>('read_text_file', { path }),
-  ytdlpStatus: () => invoke<{ supported: boolean; ytdlp: string | null; ffmpeg: string | null }>('ytdlp_status'),
-  importUrl: (req: { url: string; format: string; quality: number; dest_dir?: string }) => invoke<number>('import_url', { req }),
+  ytdlpStatus: () => invoke<YtStatus>('ytdlp_status'),
+  ytdlpInstall: () => invoke<string>('ytdlp_install'),
+  ytdlpUpdate: (target?: 'server') => invoke<string>('ytdlp_update', { target }),
+  importUrl: (req: ImportRequest) => invoke<number>('import_url', { req }),
   jobs: () => invoke<ImportJob[]>('list_jobs'),
   cancelJob: (id: number) => invoke<void>('cancel_job', { id }),
   clearJobs: () => invoke<void>('clear_jobs'),
@@ -115,7 +128,7 @@ export const api = {
   removeDownloads: (ids: number[]) => invoke<void>('remove_downloads', { ids }),
   clearDownloads: () => invoke<number>('clear_downloads'),
   cacheStatus: () => invoke<CacheInfo>('cache_status'),
-  youtubeSearch: (query: string) => invoke<YtResult[]>('youtube_search', { query }),
+  youtubeSearch: (query: string, creativeCommons = false) => invoke<YtSearch>('youtube_search', { query, creativeCommons }),
   // Android-only
   pickAudio: () => invoke<string[]>('pick_audio'),
 };

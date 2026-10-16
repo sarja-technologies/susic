@@ -33,6 +33,13 @@ exposed to the public internet.
 * **Limitation:** the token is not encrypted at rest (no OS keyring / Android Keystore yet). Anyone with
   access to your user account or a rooted device can read it. Revoke from the server if a device is lost.
 * YouTube API keys are stored in the local settings table in plain text (your own key, local only).
+* yt-dlp is an external executable. "Install"/"Update" download only the official release from
+  github.com/yt-dlp over HTTPS and refuse it unless its SHA-256 matches the release's `SHA2-256SUMS`.
+  yt-dlp always runs with `--ignore-config`, URL arguments follow `--`, only `http(s)` URLs are accepted,
+  and no cookies or credentials are ever passed.
+* With `ytdlp_enabled = true`, any paired device can make the server fetch URLs through yt-dlp (which
+  can reach anything the server can reach) and write new files into `imports_dir`. Only pair devices
+  you trust, and revoke lost ones.
 * The webview CSP limits network access to the app itself; server and YouTube requests are made from
   Rust, not the webview.
 * Android sets `usesCleartextTraffic="true"` so the user can enter an `http://` tailnet/LAN address.

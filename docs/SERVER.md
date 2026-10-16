@@ -9,7 +9,9 @@ HTTP API with Range support (seek, resume, buffering). It is a single ~9 MB bina
 
 ## What it will and will not do
 
-* **Read-only on your music.** It never writes, renames or deletes files in `music_dir`.
+* **Read-only on your music.** It never writes, renames or deletes files in `music_dir`. The one
+  exception is opt-in: with `ytdlp_enabled = true` it *adds* new imported files to
+  `music_dir/imports_dir` (see [YOUTUBE.md](YOUTUBE.md)). It still never changes or deletes existing files.
 * **Never touches disks or mounts.** You choose `music_dir`; the installer does not partition,
   format, mount or move anything.
 * **Unmounted-SSD safe.** If the music directory is missing, or is present but yields no audio while
@@ -54,13 +56,38 @@ sudo systemctl edit susic-server
 | `data_dir` | `/var/lib/susic` | Database + artwork thumbnails. |
 | `scan_interval_secs` | `300` | Rescan interval. `0` = only at startup. |
 | `server_name` | `Susic Server` | Shown in clients. |
+| `ytdlp_enabled` | `false` | Let paired devices search YouTube and import audio via the server's yt-dlp + FFmpeg ([YOUTUBE.md](YOUTUBE.md)). |
+| `imports_dir` | `Susic Imports` | Sub-folder of `music_dir` that receives imports (relative, no `..`). |
 
-Environment overrides: `SUSIC_BIND`, `SUSIC_MUSIC_DIR`, `SUSIC_DATA_DIR`, `SUSIC_SCAN_INTERVAL`.
+Environment overrides: `SUSIC_BIND`, `SUSIC_MUSIC_DIR`, `SUSIC_DATA_DIR`, `SUSIC_SCAN_INTERVAL`,
+`SUSIC_YTDLP_ENABLED`, `SUSIC_IMPORTS_DIR`.
+
+#### Enabling YouTube import under systemd
+
+The shipped unit is sandboxed (`ProtectSystem=strict`, only `/var/lib/susic` writable), so imports
+also need write access to the imports folder. Create it and add a drop-in
+(`sudo systemctl edit susic-server`):
+
+```ini
+[Service]
+ReadWritePaths=/srv/music/Susic\x20Imports
+```
+
+```sh
+sudo install -d -o susic -g susic "/srv/music/Susic Imports"
+sudo apt install ffmpeg            # Node.js or Deno is also recommended for yt-dlp
+sudo -u susic susic-server --config /etc/susic/server.toml ytdlp-install
+sudo systemctl restart susic-server
+susic-server --config /etc/susic/server.toml check
+```
+
+The managed yt-dlp goes in `data_dir/tools/` and its cache in `data_dir/cache/yt-dlp/`.
 
 ### Commands
 
 ```
-susic-server [--config FILE] serve | scan | pair | devices | revoke <ID> | purge-missing | check | version
+susic-server [--config FILE] serve | scan | pair | devices | revoke <ID> | purge-missing | check |
+                             ytdlp-install | ytdlp-update | version
 ```
 
 Logs go to stderr → `journalctl -u susic-server -f`. Each scan logs added/updated/moved/removed counts.
@@ -110,12 +137,19 @@ All under `/api/v1`, `Authorization: Bearer <token>` (or `?access_token=` for me
 | `GET/PUT/DELETE /playlists[/{uid}]` | Last-writer-wins playlist sync |
 | `GET /devices`, `DELETE /devices/{id}` | List / revoke paired devices |
 | `POST /scan`, `GET /status` | Trigger rescan / status |
+| `GET /youtube` | YouTube capabilities: `{enabled, ytdlp, version, ffmpeg, js_runtime, imports_dir}` |
+| `GET /youtube/search?q=&cc=0\|1&limit=` | yt-dlp search → `{results:[{id,url,title,artist,channel,duration_ms,thumb,live}]}` (403 when disabled) |
+| `POST /youtube/update` | Install or update the server's yt-dlp (verified official release) |
+| `GET /imports`, `POST /imports`, `DELETE /imports/{id}` | Import jobs: `{url, format, quality, title}` → job; poll for `status`, `progress`, `message`, `license`, `track_id`; DELETE cancels (or forgets a finished job) |
 
 ## Verified vs. not verified
 
 Verified by automated tests against a real socket and real audio files: pairing, token auth and
 revocation, ranged streaming, move/delete detection, unmounted-directory protection, playlist
-conflict resolution, client reconnect after a server restart, resumable downloads.
+conflict resolution, client reconnect after a server restart, resumable downloads. With
+`SUSIC_LIVE_YTDLP=1`, live tests also cover yt-dlp install via the API, real YouTube search, a real
+import of Creative Commons media, indexing and streaming it back
+(`cargo test -p susic-client --test youtube_live`).
 
 **Not verified here:** an actual reboot of a systemd host (the unit passes `systemd-analyze verify`),
 and a real OptiPlex/SSD. Test `sudo reboot` once after installing.

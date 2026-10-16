@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+### Added
+- **YouTube search without an API key**: yt-dlp `ytsearch` results (title, artist/channel, thumbnail,
+  duration) inline in Search, debounced as you type, with a *Creative Commons only* filter.
+- **Import workflow**: import a result (or any URL) to this device or to your Susic server. Format
+  (M4A/MP3/FLAC/WAV/Opus/original) and bitrate, live progress (size, speed, ETA, stages), cancel
+  (kills yt-dlp, removes partial files), serial queue, duplicate reuse, declared licence recorded,
+  tags and square cover art embedded, thumbnail fallback, Play when done.
+- **Server**: opt-in `ytdlp_enabled`/`imports_dir`; `GET /youtube`, `/youtube/search`,
+  `POST /youtube/update`, `/imports` jobs; `ytdlp-install`/`ytdlp-update` commands; `check` reports
+  yt-dlp/FFmpeg. Android searches and imports through the server.
+- **yt-dlp management**: one-click install of the official release (SHA-256 verified), update,
+  FFmpeg and JS-runtime detection (Deno/Node passed to yt-dlp), extra PATH locations for GUI apps.
+- Clear messages for rate limiting/bot checks, HTTP 403 (retried once), DRM, age/members/payment/
+  region restrictions, unavailable videos, outdated yt-dlp and network errors.
+- Live end-to-end tests against real YouTube (`SUSIC_LIVE_YTDLP=1`).
+
+### Changed
+- The YouTube Data API is now an optional search backend; yt-dlp is the default.
+- Library schema migration 4: import jobs record title, target, licence and track id.
+- yt-dlp runs with `--ignore-config`; URLs are passed after `--`; playlist URLs are refused.
+
+### Fixed
+- The "Importing… 1/1" banner stayed visible after a URL import finished.
+
 ## 0.2.0 — unreleased
 
 ### Added

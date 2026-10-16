@@ -68,6 +68,11 @@ const MIGRATIONS: &[&str] = &[
      CREATE INDEX idx_tracks_remote ON tracks(remote_id);
      ALTER TABLE playlists ADD COLUMN remote_uid TEXT;
      CREATE TABLE playlist_tombstones (uid TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);",
+    // 4: richer import jobs (yt-dlp search/import to this device or the server)
+    "ALTER TABLE import_jobs ADD COLUMN title TEXT NOT NULL DEFAULT '';
+     ALTER TABLE import_jobs ADD COLUMN target TEXT NOT NULL DEFAULT 'device';
+     ALTER TABLE import_jobs ADD COLUMN license TEXT NOT NULL DEFAULT '';
+     ALTER TABLE import_jobs ADD COLUMN track_id INTEGER;",
 ];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {

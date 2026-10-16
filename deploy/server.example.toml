@@ -1,13 +1,14 @@
 # /etc/susic/server.toml — Susic server configuration.
 # Every value can also be set with a SUSIC_* environment variable
-# (SUSIC_BIND, SUSIC_MUSIC_DIR, SUSIC_DATA_DIR, SUSIC_SCAN_INTERVAL).
+# (SUSIC_BIND, SUSIC_MUSIC_DIR, SUSIC_DATA_DIR, SUSIC_SCAN_INTERVAL,
+# SUSIC_YTDLP_ENABLED, SUSIC_IMPORTS_DIR).
 
 # Address to listen on. Use your Tailscale IP (tailscale ip -4) or LAN IP.
 # "127.0.0.1:8484" is safest when fronting with `tailscale serve`.
 bind = "127.0.0.1:8484"
 
-# Where the music lives (the old SSD's mount point). Opened read-only in practice:
-# Susic never writes, renames or deletes files here.
+# Where the music lives (the old SSD's mount point). Susic never changes or deletes files here;
+# it only adds new files to imports_dir when ytdlp_enabled = true.
 music_dir = "/srv/music"
 
 # Database and artwork thumbnails. Back this directory up (see docs/SERVER.md).
@@ -18,3 +19,10 @@ scan_interval_secs = 300
 
 # Shown in clients.
 server_name = "Homelab Music"
+
+# Optional: let paired devices (including Android) search YouTube and import music you have the
+# right to download, using this server's yt-dlp + FFmpeg. Off by default. See docs/YOUTUBE.md —
+# under systemd the imports folder must also be added to ReadWritePaths (docs/SERVER.md).
+ytdlp_enabled = false
+# Sub-folder of music_dir that receives imports.
+imports_dir = "Susic Imports"

@@ -837,10 +837,12 @@ impl Library {
 
     // ---- import jobs ------------------------------------------------------
 
-    pub fn add_import_job(&self, url: &str) -> Result<i64> {
+    /// `target` is `device` or `server`; `title` is a display hint (may be empty).
+    pub fn add_import_job(&self, url: &str, title: &str, target: &str) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO import_jobs (url, status, progress, message, created_at) VALUES (?1,'queued',0,'',?2)",
-            params![url, now()],
+            "INSERT INTO import_jobs (url, status, progress, message, created_at, title, target) \
+             VALUES (?1,'queued',0,'',?2,?3,?4)",
+            params![url, now(), title, target],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -859,9 +861,27 @@ impl Library {
         Ok(())
     }
 
+    /// Record what an import produced: the source's declared licence (if any),
+    /// a better title once known, and the local track id (device imports).
+    pub fn set_import_job_result(
+        &self,
+        id: i64,
+        title: Option<&str>,
+        license: Option<&str>,
+        track_id: Option<i64>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "UPDATE import_jobs SET title=COALESCE(?2, title), license=COALESCE(?3, license), \
+             track_id=COALESCE(?4, track_id) WHERE id=?1",
+            params![id, title, license, track_id],
+        )?;
+        Ok(())
+    }
+
     pub fn import_jobs(&self) -> Result<Vec<ImportJob>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, url, status, progress, message, created_at FROM import_jobs ORDER BY id DESC LIMIT 200",
+            "SELECT id, url, status, progress, message, created_at, title, target, license, track_id \
+             FROM import_jobs ORDER BY id DESC LIMIT 200",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(ImportJob {
@@ -871,6 +891,10 @@ impl Library {
                 progress: r.get(3)?,
                 message: r.get(4)?,
                 created_at: r.get(5)?,
+                title: r.get(6)?,
+                target: r.get(7)?,
+                license: r.get(8)?,
+                track_id: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
@@ -902,6 +926,12 @@ pub struct ImportJob {
     pub progress: f64,
     pub message: String,
     pub created_at: i64,
+    pub title: String,
+    /// `device` or `server`
+    pub target: String,
+    /// Licence declared by the source (e.g. "Creative Commons Attribution license (reuse allowed)").
+    pub license: String,
+    pub track_id: Option<i64>,
 }
 
 #[cfg(test)]

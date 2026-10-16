@@ -101,6 +101,7 @@ fn setup(
         data_dir: root.join("data"),
         scan_interval_secs: 0,
         server_name: "T".into(),
+        ..Default::default()
     };
     let state = susic_server::open_state(cfg).unwrap();
     state.run_scan().unwrap().unwrap();
