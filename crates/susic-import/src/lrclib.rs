@@ -27,7 +27,7 @@ pub fn fetch(
             concat!(
                 "Susic/",
                 env!("CARGO_PKG_VERSION"),
-                " (https://github.com/crossainthero-lab/susic)"
+                " (https://github.com/sarja-technologies/susic)"
             ),
         )
         .timeout(std::time::Duration::from_secs(10))

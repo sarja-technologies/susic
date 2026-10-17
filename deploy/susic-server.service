@@ -1,6 +1,6 @@
 [Unit]
 Description=Susic music server
-Documentation=https://github.com/crossainthero-lab/susic/blob/main/docs/SERVER.md
+Documentation=https://github.com/sarja-technologies/susic/blob/main/docs/SERVER.md
 After=network-online.target tailscaled.service
 Wants=network-online.target
 # If the music SSD is a separate mount, add a drop-in (systemctl edit susic-server):
