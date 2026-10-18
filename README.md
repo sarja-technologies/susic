@@ -99,4 +99,10 @@ scripts/make-fixtures.sh ./fixtures        # synthetic test audio (ffmpeg)
 
 ## Licence
 
-GPL-3.0-or-later — see [LICENSE](LICENSE) and [docs/RELEASING.md](docs/RELEASING.md#licence).
+Susic's own source code, documentation and original assets are dedicated to the public domain under
+[CC0 1.0 Universal](LICENSE) (SPDX: `CC0-1.0`). Earlier revisions of this repository were published under
+GPL-3.0-or-later; the copyright holders have re-released their own contributions under CC0 (see
+[docs/RELEASING.md](docs/RELEASING.md#licence)).
+
+CC0 applies only to material the project's authors own. Third-party dependencies and vendored files keep
+their own licences and notices; see [THIRD_PARTY.md](THIRD_PARTY.md).

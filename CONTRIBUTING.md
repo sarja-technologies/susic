@@ -28,7 +28,8 @@ cd apps/susic-app && npm run check && npm test
   purple/violet, no decorative gradients. Every button must do something; keyboard and screen-reader
   access matter.
 * Don't add dependencies lightly (the server targets old hardware). New dependencies must be
-  GPL-3.0-compatible; update `THIRD_PARTY.md`.
+  permissively licensed (MIT, Apache-2.0, BSD, Zlib, MPL-2.0 or similar) and must not impose copyleft on
+  Susic's own code; update `THIRD_PARTY.md`.
 * Never claim a platform behaviour is verified unless you ran it; say what you tested in the PR.
 
 ## Reporting bugs and security issues
@@ -38,4 +39,7 @@ please report privately.
 
 ## Licence
 
-By contributing you agree your work is licensed under GPL-3.0-or-later.
+Susic is dedicated to the public domain under [CC0 1.0 Universal](LICENSE). By contributing you confirm
+that you wrote the contribution (or otherwise have the right to submit it) and that you dedicate it under
+CC0 1.0. Do not submit code or assets copied from other projects unless their licence permits it, and
+include the original notice so it can be listed in `THIRD_PARTY.md`.
